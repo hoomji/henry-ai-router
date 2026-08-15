@@ -2,9 +2,11 @@
 
 ## Outcome
 
-Add one new AI-router product idea to [`IDEA.md`](../../IDEA.md), or promote an existing
-idea into a product specification under
-[`docs/product-specs/index.md`](../product-specs/index.md).
+Add or revise an AI-router product specification under
+[`docs/product-specs/index.md`](../product-specs/index.md). (The former idea record
+`IDEA.md` was promoted into
+[`docs/product-specs/provider-risk-management-gateway.md`](../product-specs/provider-risk-management-gateway.md)
+and deleted.)
 
 This is the workflow this repository actually performs today. If an agent can complete it
 end to end using only the repository — finding the authoritative file, making a scoped
@@ -16,7 +18,8 @@ edit, and proving the result with a command — the minimum harness is doing its
 - Credentials or services: none. Every step runs offline.
 - Maximum risk class: R1 (workspace edits only). No push, no PR, no shared state.
 - Stop and escalate when: the change would add application code, choose an
-  implementation language or framework, or contradict `IDEA.md` — those are ADR-level
+  implementation language or framework, or contradict an accepted product
+  specification — those are ADR-level
   decisions, not routine edits.
 
 ## Steps

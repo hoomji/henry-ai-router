@@ -15,7 +15,6 @@ change that belongs in an ADR rather than in a routine edit.
 
 | Component | Path | Role |
 |---|---|---|
-| Idea record | [`IDEA.md`](IDEA.md) | Candidate product directions and the meta-pattern across them |
 | Knowledge store | `docs/` | Product specs, design docs, execution plans, references, generated output |
 | Harness state | `docs/harness/` | Manifest, tracer workflow, learning ledger |
 | Repository scripts | `scripts/` | The deterministic setup, validation, and gate entrypoints |
