@@ -13,6 +13,7 @@ Verification status vocabulary:
 | Document | Scope | State | Owner | Last verified | Evidence |
 |---|---|---|---|---|---|
 | [Core beliefs](core-beliefs.md) | Agent-first operating principles | Proposed | henry.tran@uniblock.dev | Unverified | None |
+| [Gateway design](gateway-design.md) | Module layout, adapter contract, routing seam, fail-open path, target and management surfaces, config surface for `gateway/` | Proposed | henry.tran@uniblock.dev | Unverified | None (no implementation yet) |
 
 ## Entry contract
 
