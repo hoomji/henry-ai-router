@@ -7,8 +7,8 @@ nothing to deploy. Treat that as the current state, not as a gap to fill silentl
 ## Repository map
 
 - Architecture and boundaries: [`ARCHITECTURE.md`](ARCHITECTURE.md)
-- Decisions: no ADRs yet; use `docs/adr/NNNN-short-slug.md` when the first one is needed
-- Domain language: no `CONTEXT.md` yet; create it once a term actually needs resolving
+- Decisions: [`docs/adr/`](docs/adr/), numbered `NNNN-short-slug.md`
+- Domain language: [`CONTEXT.md`](CONTEXT.md) — glossary only, no behavior or decisions
 - Harness capability state: [`docs/harness/manifest.yaml`](docs/harness/manifest.yaml)
 - Representative workflow: [`docs/harness/tracer-workflow.md`](docs/harness/tracer-workflow.md)
 - Repeated-friction ledger: [`docs/harness/learning-ledger.md`](docs/harness/learning-ledger.md)

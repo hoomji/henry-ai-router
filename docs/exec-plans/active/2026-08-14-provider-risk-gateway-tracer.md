@@ -25,7 +25,8 @@ below; no milestone is spent deciding them.
 ## Progress
 
 - [ ] Scaffold the runnable gateway with a fail-open pass-through proxy (M1).
-- [ ] Prototype target-state routing against simulated providers (M2).
+- [ ] Implement target-state routing against simulated providers, decision surface and
+      HTTP surfaces both (M2).
 
 Add a timestamped entry at every stopping point. This checklist must state the actual
 state of the work, not the originally intended sequence.
@@ -77,6 +78,28 @@ None yet.
   of provider state rather than of live input/output, and the forwarding path stays thin
   enough to be reimplemented against the same adapter contract.
   Date/Author: 2026-08-14 / henry.tran@uniblock.dev (confirmed), recorded by Claude
+
+- Decision: M2 implements the spec's full target vocabulary and its customer-facing HTTP
+  surfaces, and is no longer labeled *Prototyping*.
+  Rationale: Grilling ticket [#6](https://github.com/hoomji/henry-ai-router/issues/6)
+  resolved behavior 1 in full — workloads, three dimensions, an objective, a priority
+  order, a hard dimension, and two distinct infeasibility states — and the repository owner
+  chose to build all of it in M2 rather than keep M2 a narrow subset, including the
+  management API, status resource, notification, and response header. Publishing those
+  contracts is incompatible with the *Prototyping* label, whose promise was that the
+  milestone could be discarded on evidence; keeping the label while shipping customer-facing
+  HTTP would be a false promise. The escalation criterion that made the prototype
+  meaningful (oscillation above 20% forces a redesign) is retained as an escalation
+  trigger instead.
+  Date/Author: 2026-08-15 / henry.tran@uniblock.dev (confirmed), recorded by Claude
+
+- Decision: `chooseProvider` returns a binding reason alongside the chosen provider.
+  Rationale: The spec requires both infeasibility reports to name why each candidate
+  provider was rejected. A reason reconstructed from logs after the fact is not
+  trustworthy, so the requirement is a constraint on the routing seam's return type rather
+  than a logging concern. See `docs/adr/0001-declaration-time-vs-observed-infeasibility.md`.
+  This changes the signature recorded under "Interfaces and Dependencies" below.
+  Date/Author: 2026-08-15 / Claude (planning), per #6
 
 ## Outcomes & Retrospective
 
@@ -201,34 +224,114 @@ Escalate when: the fail-open semantics conflict with a security requirement not 
 written down, or a runtime dependency beyond the Node standard library appears necessary
 and the trade-off is not obvious.
 
-### M2 — Prototyping: target-state routing against simulated providers
+### M2 — Target-state routing against simulated providers
 
-Goal (labeled Prototyping): demonstrate the spec's behavior 1 in miniature. Two stub
-providers with different simulated latency and per-request cost; a target expressed as
-`{"p95_ms": <int>, "cost_per_1k": <float>}` supplied via a config file; a routing loop
-that measures observed latency and cost and shifts the traffic split toward the target
-without any customer-written rule.
+Goal: implement the spec's behavior 1 as specified in
+`docs/product-specs/provider-risk-management-gateway.md`, section "Target-state routing in
+detail", against simulated providers. This milestone covers both the decision surface (the
+target vocabulary and the two infeasibility states) and the delivery surface (the
+management API, the status resource, the notification, and the response header). It is
+**not** labeled Prototyping: shipping customer-facing HTTP contracts makes it not
+discardable on evidence, which is what that label promised. See the Decision Log.
 
-Work: extend `chooseProvider` to consult a rolling window of observed latencies and costs
-per provider — passed in as part of the `ProviderState` snapshot, never read from
-input/output inside the function — and pick the provider that keeps the projected p95 and
-cost inside the target. When the target is infeasible (neither provider can satisfy it),
-log and report infeasibility explicitly, matching the spec's boundary behavior. Drive it
-with a load script under `gateway/src/dev/` that sends a few hundred requests and prints
-the final split and measured p95.
+Two stub providers with different simulated latency, per-request cost, and error injection
+drive the whole thing; no provider credentials are needed.
 
-Completion criterion: the load script's output shows the traffic split changing when the
-target changes, and an infeasible target produces an explicit infeasibility report rather
-than silent best-effort.
+Work, in the order it should land:
 
-Verification: run the load script (path and command recorded here when written) twice with
-different targets and compare printed splits; run once with an impossible target and
-observe the infeasibility report.
+1. **Target document and its schema.** A per-customer document holding named workloads.
+   Each workload carries: `allowed_models` (required, non-empty); zero or more of the
+   three dimensions `p95_ms`, `cost_per_1k_tokens_usd`, `success_rate`; one `objective`
+   naming a dimension or `none`; an optional `priority` order over the stated dimensions,
+   defaulting to reverse declaration order; and an optional single `hard` dimension,
+   defaulting to none. Every customer has a `default` workload. Reject unknown dimension
+   names rather than ignoring them — the vocabulary is closed on purpose.
 
-Rollback and recovery: prototype code is additive under `gateway/`; discard by reverting if
-the approach is not promoted. Promotion criterion: the routing loop holds a feasible target
-across a run without oscillating more than 20% between consecutive windows; otherwise
-record findings in Surprises & Discoveries and redesign.
+2. **Measurement.** Per workload and provider, maintain a rolling window: trailing 5
+   minutes **or** 200 requests, whichever spans longer. Latency is provider-attributable
+   (time to last byte from the upstream), not end-to-end. `success_rate` counts a request
+   as successful when it got a usable response after all internal retries and failovers,
+   so a re-routed 429 or 5xx is a success; malformed customer requests are excluded from
+   the denominator entirely. Below the sample floor the dimension's value is
+   `insufficient_data`, a distinct value — never a percentile over a handful of requests.
+
+3. **Routing.** Extend `chooseProvider` to consult that window through the `ProviderState`
+   snapshot, never reading input/output inside the function. It selects the provider that
+   holds every ceiling while minimizing the objective. When no candidate holds every
+   ceiling, the lowest-priority ceiling yields; a `hard` dimension never yields, and the
+   request fails instead.
+
+   **The return type changes**: `chooseProvider` must return the chosen provider *and* a
+   binding reason — which dimension bound the decision, and why each candidate was
+   rejected. The spec requires both reports to be diagnoses, and a reason reconstructed
+   from logs after the fact is not one. Record the new signature under "Interfaces and
+   Dependencies" when it is written.
+
+4. **`infeasible_by_declaration`.** On every write of the target document, check
+   synchronously whether any allowed model can satisfy each stated dimension, against a
+   declared capability floor per model held by the gateway. If none can, reject the write
+   with the dimension, the requested value, the best achievable value, and the provider
+   achieving it.
+
+5. **`unmet`.** A per-workload runtime state, entered after two consecutive full windows
+   in which the target was missed and left after two consecutive full windows in which it
+   was held. The symmetry is deliberate; do not "improve" it into a faster exit. The
+   report carries dimension, target, observed value, window, and the per-provider
+   rejection reason.
+
+6. **Delivery surface.** Four HTTP surfaces:
+   - `GET`/`PUT /v1/targets` — read and write the target document. Reads return a version;
+     writes must supply the version they replace and get `409` on mismatch. A write that
+     is infeasible by declaration returns `422` with the report from step 4.
+   - `GET /v1/workloads/{name}/status` — the **authoritative** current state: per
+     dimension, the target, the observed value or `insufficient_data`, the window, and the
+     workload's `unmet` state with its report.
+   - A notification on every entry into and exit from `unmet`, `POST`ed to a
+     customer-configured URL with an HMAC signature header over the body computed with a
+     per-customer secret, retried with backoff for approximately 15 minutes and then
+     dropped. Dropping is safe and intended: the status resource is the record, the
+     notification is not. Prove this deliberately — see the verification below.
+   - `x-gateway-target-unmet: <dimension>` on responses served while the workload is
+     `unmet`.
+
+7. **Load script** under `gateway/src/dev/` sending a few hundred requests, printing the
+   final split, the measured p95, and the current status resource.
+
+Nothing here may touch the M1 forwarding path or leak server types into
+`src/providers/` — the Decision Log's three constraints still hold, and the whole target
+apparatus sits behind the `chooseProvider` seam and its own HTTP handlers.
+
+Completion criterion: the traffic split changes when the target changes; an
+arithmetically impossible target is rejected at write time with a named best-achievable
+value; a target that stops holding raises `unmet` after two windows and clears after two;
+a conflicting pair of ceilings yields the lower-priority one and fails the request instead
+when that dimension is `hard`; and a concurrent write with a stale version gets a `409`.
+
+Verification: run the load script twice with different targets and compare printed splits.
+Then, each producing its named artifact in "Artifacts and Notes":
+
+- `PUT` a target of `p95_ms: 1` and expect `422` naming the best achievable value.
+- `PUT` twice with the same version and expect `409` on the second.
+- Degrade both stub providers past the target, wait two windows, and expect the status
+  resource to report `unmet`, a signed notification to arrive, and subsequent responses to
+  carry `x-gateway-target-unmet`. Restore the stubs and expect the state to clear only
+  after two held windows, not one.
+- Repeat the degradation with the notification endpoint refusing connections, and confirm
+  the status resource still reports `unmet` — this is the guarantee that makes dropping
+  notifications acceptable.
+- Send a request with `x-gateway-workload` naming a second workload with a different
+  target and confirm it routes differently from `default` in the same run.
+
+Rollback and recovery: additive under `gateway/`; revert to recover. The HTTP surfaces are
+new paths and do not modify M1's endpoint. Because this milestone publishes customer-facing
+contracts, treat a revert after those contracts are exposed to any real customer as a
+breaking change rather than a discard.
+
+Escalate when: holding a feasible target requires oscillating the split more than 20%
+between consecutive windows (record in Surprises & Discoveries and redesign the loop
+before adding damping), or when the declared capability floor per model in step 4 turns
+out not to be knowable for a real provider — that would undercut
+`infeasible_by_declaration` and is a product question owned by the spec, not this plan.
 
 Escalate when: results suggest the target-state interface itself is wrong (a product
 question owned by the spec, not this plan).
@@ -238,10 +341,10 @@ question owned by the spec, not this plan).
 M1 is the additive tracer: it creates the runtime under `gateway/`,
 and updates the three documents that currently deny a runtime exists (`AGENTS.md`,
 `ARCHITECTURE.md`, `docs/harness/manifest.yaml`). It proves the spec's fail-open boundary
-first because every later behavior sits on top of it. M2 is an explicitly labeled prototype
-of the first product behavior, kept additive so it can be promoted or discarded on
-evidence, and kept behind the `chooseProvider` seam so it changes routing policy without
-touching the forwarding path. Pricing behaviors (2 and 4), cross-customer signals (3), and
+first because every later behavior sits on top of it. M2 implements the first product
+behavior in full — the target vocabulary specified in the product spec plus its
+customer-facing HTTP surfaces — kept additive and behind the `chooseProvider` seam so it
+changes routing policy without touching the forwarding path. Pricing behaviors (2 and 4), cross-customer signals (3), and
 prompt translation (5) are out of this plan's scope until their open product decisions in
 the spec are resolved.
 
@@ -265,11 +368,13 @@ list and in `docs/harness/manifest.yaml`.
 
 The plan is complete when a novice, following M1's start command from `AGENTS.md`, can
 observe: (1) a proxied completion response, (2) the fail-open header under the forced
-error flag, and (3) M2's load script demonstrating a target-driven traffic split and an
-explicit infeasibility report. Automated proof: `python scripts/check.py` passes, plus the
-gateway's own test command introduced in M1 (recorded here when created). This evidence
-maps directly to the spec's acceptance criteria for behavior 1 and the fail-open boundary;
-the spec's remaining criteria stay open and unclaimed.
+error flag, and (3) M2's load script demonstrating a target-driven traffic split, plus M2's
+five named verification artifacts covering `infeasible_by_declaration`, the `409` on a
+stale write, `unmet` entry and its two-window exit, `unmet` surviving an unreachable
+notification endpoint, and per-workload routing. Automated proof: `python scripts/check.py`
+passes, plus the gateway's own test command introduced in M1 (recorded here when created).
+This evidence maps directly to the spec's four behavior-1 acceptance criteria and the
+fail-open boundary; the spec's remaining criteria stay open and unclaimed.
 
 ## Idempotence and Recovery
 
@@ -286,10 +391,19 @@ None yet; add M1's curl transcripts and M2's load-script output here as they are
 
 - `POST /v1/chat/completions` — the gateway's single inbound endpoint in this plan,
   chosen because it is the de facto industry shape for chat model calls.
-- `chooseProvider(request: GatewayRequest, state: ProviderState): Provider` — the routing
-  seam; M1 returns the sole upstream, M2 replaces the body with target-state logic.
-  Keeping this signature stable, and keeping the function free of input/output, is what
-  makes M2 additive and what keeps a future Rust or Go data plane possible.
+- `chooseProvider(request: GatewayRequest, state: ProviderState): RoutingDecision` — the
+  routing seam. M1 returns the sole upstream; M2 replaces the body with target-state logic.
+  `RoutingDecision` carries the chosen provider **and** the binding reason (the bounding
+  dimension and the per-candidate rejection reasons) per the Decision Log. Keeping the
+  function free of input/output is what makes M2 additive and what keeps a future Rust or
+  Go data plane possible.
+- `PUT /v1/targets`, `GET /v1/targets`, `GET /v1/workloads/{name}/status` — M2's
+  management surfaces, versioned with optimistic concurrency (`409` on stale version,
+  `422` on a target infeasible by declaration).
+- An outbound signed notification on `unmet` transitions — at-least-once, bounded retry,
+  droppable because the status resource is the authoritative record.
+- `x-gateway-workload` (inbound, names the workload) and `x-gateway-target-unmet`
+  (outbound, names the bound dimension while unmet).
 - Provider adapters under `gateway/src/providers/` — pure translation between the gateway's
   request/response shape and a specific upstream's dialect, with no server or framework
   types. This is the contract a reimplemented data plane would have to honor.
@@ -301,6 +415,13 @@ None yet; add M1's curl transcripts and M2's load-script output here as they are
   harness scripts are unaffected and remain the validation and gate entrypoints.
 
 ## Revision Note
+
+2026-08-15 — Rewrote M2 from a narrow prototype (`{p95_ms, cost_per_1k}` in a config file)
+to the spec's full target vocabulary plus its four customer-facing surfaces, dropped its
+*Prototyping* label, and changed `chooseProvider`'s return type to carry a binding reason.
+Driven by grilling ticket [#6](https://github.com/hoomji/henry-ai-router/issues/6), which
+specified behavior 1 in full; the repository owner chose to build all of it in M2 rather
+than stage the HTTP surfaces into a later milestone. M1 is unchanged.
 
 2026-08-14 — Created this plan to carry the provider-risk-management-gateway product
 specification from a documentation-only repository to a first runnable, fail-open tracer

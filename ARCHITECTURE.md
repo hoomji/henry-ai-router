@@ -31,9 +31,15 @@ manifest declares `startable_runtime` as missing rather than guessing a start co
 
 ## Decisions
 
-No ADRs exist yet. When the first hard-to-reverse choice arises — most likely "does
-implementation live in this repository or a separate one?" — record it at
-`docs/adr/NNNN-short-slug.md`.
+ADRs live at `docs/adr/NNNN-short-slug.md`.
+
+- [`0001`](docs/adr/0001-declaration-time-vs-observed-infeasibility.md) — declaration-time
+  and observed infeasibility are two states, not one.
+
+## Domain language
+
+[`CONTEXT.md`](CONTEXT.md) is the glossary for this product's domain. It is a glossary
+only: required behavior belongs in `docs/product-specs/`, decisions in `docs/adr/`.
 
 ## Design documentation
 
