@@ -6,8 +6,7 @@ private conversations, or human memory. Capture and retire entries with
 
 | Reference | Source | Version or retrieved | Repository consumers | Owner | Review date |
 |---|---|---|---|---|---|
-
-_No references yet._
+| [Incident-only gateway interception mechanisms](2026-08-15-incident-interception-mechanisms.md) | AWS Route 53 docs, OpenAI/Anthropic SDK docs, LaunchDarkly architecture docs, Envoy xDS docs | Retrieved 2026-08-15 | Provider-risk gateway product spec (issues #4, #8) | Henry | 2027-02-15 |
 
 ## Entry contract
 
