@@ -107,6 +107,21 @@ None yet.
   of our components authors it.
   Date/Author: 2026-08-15 / henry.tran@uniblock.dev (confirmed), recorded by Claude
 
+- Decision: The connector contributes strain evidence from M1, even though behavior 3 is
+  deferred. A usage record gains the response status code, the model and provider region
+  completing the cell key, and any rate-limit limit/reset headers; the strain buffer sheds
+  load by sampling while the usage buffer keeps dropping oldest first.
+  Rationale: Grilling ticket [#10](https://github.com/hoomji/henry-ai-router/issues/10).
+  Contribution is a condition of service ([ADR
+  0007](../../adr/0007-strain-contribution-is-a-condition-of-service.md)), and behavior 3's
+  trigger counts customers *concurrently connected* per cell — a cohort cannot be built
+  retroactively, so a behavior that starts collecting on the day it is built can never find
+  its trigger already met. The buffering split is not symmetry for its own sake: drop-oldest
+  is correct for a bill and wrong for a burst, because it discards the onset of the storm the
+  cohort exists to detect and loses most from the customers hit hardest. Aggregation, banding
+  and disclosure remain with behavior 3; this adds fields and a buffer, not a milestone.
+  Date/Author: 2026-08-15 / henry.tran@uniblock.dev (confirmed), recorded by Claude
+
 ## Outcomes & Retrospective
 
 Not started.
@@ -260,13 +275,32 @@ acknowledged much later than a pushed one.
 
 `connector/src/report.ts` batches usage reports and `POST`s them to `/v1/connector/usage`
 every ten seconds or every hundred requests, whichever comes first. Each record carries the
-workload, the provider actually used, the prompt and completion token counts as the provider
-reported them, the provider-attributable latency in milliseconds, whether the request
-ultimately succeeded, and — for M2 — the reservation identifier if the request addressed one.
-Reports are fire-and-forget and buffered in memory with a bounded queue that drops oldest
-first: usage reporting must never be able to slow down or fail a customer's request. Losing
-reports degrades the gateway's measurements and the customer's own bill computation, which
-the specification accepts by taking these counts as reported rather than audited.
+workload, the provider actually used, the model and the provider's serving region, the prompt
+and completion token counts as the provider reported them, the provider-attributable latency
+in milliseconds, the **response status code** and any rate-limit limit/reset headers the
+provider returned, and — for M2 — the reservation identifier if the request addressed one.
+Reports are fire-and-forget and buffered in memory: reporting must never be able to slow down
+or fail a customer's request.
+
+One record serves two consumers with different tolerances for loss, and the buffering differs
+accordingly. As a **usage** record it computes the bill, and losing one degrades a figure the
+specification already takes as reported rather than audited — so the usage queue is bounded
+and **drops oldest first**. As a **strain contribution** it feeds behavior 3's aggregate
+(product specification, [Collective strain
+signals](../../product-specs/provider-risk-management-gateway.md#collective-strain-signals-in-detail)),
+and there drop-oldest is actively wrong: a rate-limit storm is a burst, a burst overflows the
+queue, and dropping by age discards the onset of the exact event the cohort exists to detect.
+It also fails asymmetrically — the customers hit hardest lose the most evidence, so the
+aggregate would systematically understate severe strain. The strain buffer is therefore its
+own small bounded queue that sheds load by **sampling rather than by age**, preserving the
+shape of a burst instead of its tail, and records its own drop rate so the aggregate knows
+what it is missing.
+
+The status code matters rather than a success boolean because 429 and 5xx are distinct
+signals, and the limit/reset headers matter because the specification excludes 429s
+attributable to the customer's own quota from strain — without those headers that exclusion
+cannot be made. Nothing here aggregates across customers: cohort membership, banding, and
+disclosure all stay with behavior 3.
 
 `connector/src/headers.ts` adds the response header the specification requires. When the
 gateway's most recent push says the workload is unmet, the connector sets
@@ -480,6 +514,13 @@ behavior 4, and to the criterion that a workload in `unmet` carries the header o
 the gateway never saw. The specification's criteria for behaviors 2, 3 and 5 stay open and
 unclaimed, as their entries in *Behavior sequence and deferrals* record.
 
+One qualification on behavior 3: this plan makes the connector *contribute*, so a usage
+record carries a status code, a cell key, and rate-limit headers, and the strain buffer sheds
+by sampling. It aggregates nothing and discloses nothing, so none of behavior 3's acceptance
+criteria are claimed here. What can be observed is narrower and should be checked: a stub
+provider returning 429s produces records carrying the status code and the provider's
+limit/reset headers, and a burst of them does not evict the burst's onset from the buffer.
+
 ## Idempotence and Recovery
 
 Both milestones are additive: new directories, new HTTP paths, new store tables, and a branch
@@ -507,7 +548,9 @@ transcript here as they are produced.
   behavior 2 will later depend on, and what makes the polling fallback detectable.
 - `GET /v1/connector/lists` — the polling fallback, used only while the stream is down.
 - `POST /v1/connector/usage` — batched usage records; the source of every token count in
-  *spend under management* and of every measurement behind a target.
+  *spend under management*, of every measurement behind a target, and of every *strain
+  contribution* behavior 3 will later aggregate. One endpoint, one record, two loss
+  tolerances: see M1's `report.ts` task.
 - `POST /v1/admin/connectors` — mints a connector token, guarded by `GATEWAY_ADMIN_TOKEN`.
 - `GET`/`PUT /v1/reservations` — M2's reservation resource, versioned with the same
   optimistic concurrency as the target document, `409` on a stale version. Separate from the

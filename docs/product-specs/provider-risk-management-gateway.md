@@ -104,6 +104,16 @@ Model quality is not a targetable dimension. Scoring model quality would make th
 product a benchmarking service, which the non-goals exclude; `allowed_models` gives the
 customer the control they actually want without that.
 
+One rule governs what may ever join the vocabulary: **a targetable dimension is a property
+of a provider that the customer could in principle verify, not a property of the customer
+base.** A dimension is checked at declaration time against a *capability floor* keyed per
+`(model, host, region, service_tier)`, so a quantity with no such floor has nothing to be
+checked against and would abstain permanently. And a cohort-derived quantity reaches a
+customer only as a *band* above twenty contributors (see [What a customer is told, and what
+is withheld](#what-a-customer-is-told-and-what-is-withheld)), which is not a value anyone can
+hold the gateway to. Rate-limit headroom is the case that produced this rule and the case it
+excludes.
+
 Listing several models in `allowed_models` is the customer's assertion that those models
 are **interchangeable for that workload**. The gateway routes freely within the list and
 does not adapt a prompt when it moves a request from one listed model to another; prompt
@@ -535,6 +545,13 @@ coarse provider availability.
 Behavior 3 is deferred on a customer count, and the trigger and its basis are stated in
 [Behavior 3 is deferred on customer count](#behavior-3-is-deferred-on-customer-count).
 
+**Contribution does not wait for it.** Connectors report *strain contributions* from the day
+the connector exists, on the same reasoning the Constraints section gives for metering: a
+cohort cannot be built retroactively, and the trigger counts customers *concurrently
+connected* per cell, so a behavior that begins collecting on the day it is built can never
+find its trigger already met. What is deferred is the aggregate and everything downstream of
+it — cohort membership, banding, disclosure, and routing on the result — not the reporting.
+
 ## Pricing model
 
 This section resolves whether behaviors 2 and 4 can coexist as business models
@@ -887,7 +904,7 @@ behavior.
 | Can a customer target a **monthly cost budget** rather than a unit rate? | No — behavior 1 ships with the unit rate | henry.tran@uniblock.dev | Deferred ([#6](https://github.com/hoomji/henry-ai-router/issues/6)). A unit rate is decidable from a state snapshot; a budget requires persistent spend accounting and an exhaustion policy (hard-stop, degrade, or notify), turning provider state from a snapshot into a ledger. Specify as its own behavior if wanted. |
 | Should **error rate** be targetable separately from `success_rate`? | No | henry.tran@uniblock.dev | Deferred ([#6](https://github.com/hoomji/henry-ai-router/issues/6)). For a router the two collapse: a 429 the gateway re-routed is not a customer-visible error. Revisit only if a customer needs to see provider-level error pressure they are shielded from. |
 | Should a customer be able to see, or set, the confidence the feasibility check needs before it rejects? | No — the margin ships as a fixed rule | henry.tran@uniblock.dev | Open ([#12](https://github.com/hoomji/henry-ai-router/issues/12)). Rejection is biased optimistic with a variance-based margin the customer cannot see or tune. A customer who genuinely wants a strict pre-flight check ("reject unless you are certain") has no way to ask for one, and a customer who wants none has no way to opt out. Revisit once abstention and false-`unmet` rates are observable. |
-| Should **throughput / rate-limit headroom** be targetable? | No | henry.tran@uniblock.dev | Deferred ([#6](https://github.com/hoomji/henry-ai-router/issues/6)). Headroom is the signal behavior 3 shares across customers, not an outcome an individual customer states. Revisit when behavior 3 is specified. |
+| Should **throughput / rate-limit headroom** be targetable? | No | henry.tran@uniblock.dev | Resolved ([#10](https://github.com/hoomji/henry-ai-router/issues/10)); deferred earlier on this question in [#6](https://github.com/hoomji/henry-ai-router/issues/6) pending behavior 3's specification. **No, and the vocabulary stays closed at three.** Specifying behavior 3 turned the objection from a matter of timing into a structural one: headroom is a property of a *cohort* at a moment, so it has no *capability floor* for `infeasible_by_declaration` to check and would abstain permanently, and it reaches a customer only as a *band* above twenty contributors, which is not a value anyone can hold the gateway to. Its customer-visible consequence is already covered by `success_rate` plus the shifts behavior 3 makes unasked. Generalized as an admission rule in [What a customer can target](#what-a-customer-can-target). |
 | Is contributing strain evidence opt-in, opt-out, or a condition of service, and is #5's aggregation contract adopted as written? | Yes — blocks behavior 3 | henry.tran@uniblock.dev | Resolved ([#10](https://github.com/hoomji/henry-ai-router/issues/10)). Contribution is a **condition of service**, bounded to facts the provider side already observed ([ADR 0007](../adr/0007-strain-contribution-is-a-condition-of-service.md)). The contract is adopted with three changes: its cohort minimum is operative at **twenty** rather than ten, because condition-of-service makes every recipient a contributor and so makes #5's differencing case the only case; its one-bucket publication delay is **dropped** as having no subject once nothing is published; and its corroboration rule is **extended** to windowless routing shifts. Specified in [Collective strain signals in detail](#collective-strain-signals-in-detail). |
 | Should the gateway publish a provider-health feed as a standalone product? | No — behavior 3 ships without one | henry.tran@uniblock.dev | Deferred ([#10](https://github.com/hoomji/henry-ai-router/issues/10)). OpenRouter publishes uptime charts with no stated anonymization contract, which is a real differentiation opening. If taken, the feed is served from gateway-run synthetic probes and never from customer contributions, which would otherwise put the network effect's output and the product's largest disclosure surface in one pipe. Revisit once behavior 3 is running. |
 
