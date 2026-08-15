@@ -6,8 +6,7 @@ private conversations, or human memory. Capture and retire entries with
 
 | Reference | Source | Version or retrieved | Repository consumers | Owner | Review date |
 |---|---|---|---|---|---|
-
-_No references yet._
+| [AI gateway competitive landscape](2026-08-15-ai-gateway-competitive-landscape.md) | Vendor docs/pricing pages (OpenRouter, LiteLLM, Portkey, Martian/Thesean, Unify, Helicone, Cloudflare, Kong, AWS Bedrock; URLs inline) | Retrieved 2026-08-15 | `IDEA.md` ideas 1–4; issues #3, #6, #7, #8 | hoomji | 2026-11-15 |
 
 ## Entry contract
 
