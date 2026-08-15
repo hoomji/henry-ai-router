@@ -46,6 +46,9 @@ ADRs live at `docs/adr/NNNN-short-slug.md`.
 - [`0005`](docs/adr/0005-strain-evidence-detection-internal.md) — strain detection reads
   the internal aggregate while disclosure stays banded, which splits *provider strain*
   from the *interception window* and retires the word *incident* used by `0004`.
+- [`0006`](docs/adr/0006-routing-authority-stays-gateway-side.md) — routing policy stays in
+  the gateway and the *connector* obeys a *ranked list*, which keeps one implementation of
+  the routing decision and one authoritative *binding reason*.
 
 ## Domain language
 

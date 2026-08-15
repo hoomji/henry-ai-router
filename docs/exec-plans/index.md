@@ -8,7 +8,8 @@ section below and lives in exactly one directory: `active/` or `completed/`.
 
 | Plan | Goal | Current milestone | Owner | Updated |
 |---|---|---|---|---|
-| [active/2026-08-14-provider-risk-gateway-tracer.md](active/2026-08-14-provider-risk-gateway-tracer.md) | From spec to a runnable fail-open gateway tracer plus target-state routing prototype | M1 — fail-open gateway tracer (TypeScript on Node) | henry.tran@uniblock.dev | 2026-08-14 |
+| [active/2026-08-14-provider-risk-gateway-tracer.md](active/2026-08-14-provider-risk-gateway-tracer.md) | From spec to a runnable fail-open gateway tracer plus behavior 1's decision engine | M1 — fail-open gateway tracer (TypeScript on Node) | henry.tran@uniblock.dev | 2026-08-15 |
+| [active/2026-08-15-connector-and-reservation-aware-routing.md](active/2026-08-15-connector-and-reservation-aware-routing.md) | The customer-installed connector, then reservation-aware routing (behavior 4) | M1 — connector (not started; blocked on the tracer plan) | henry.tran@uniblock.dev | 2026-08-15 |
 
 ## Completed
 

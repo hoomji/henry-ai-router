@@ -27,9 +27,19 @@ Goals: a module layout whose seams survive all five spec behaviors; an adapter c
 future non-TypeScript data plane could honor; a routing seam that is pure policy over a
 state snapshot; a config surface that grows without breaking the two-variable tracer.
 
-Non-goals: designing behaviors 2–5 in detail (their product decisions are open); multi-
-tenancy and authn — still premature before the tracer. Deployment topology is a partial
-exception, noted below.
+Non-goals: designing behaviors 2–5 in detail (their product decisions are open). Deployment
+topology is a partial exception, noted below.
+
+Multi-tenancy and authn were previously one non-goal here, and
+[#8](https://github.com/hoomji/henry-ai-router/issues/8) showed they are two things with
+different triggers. **Authn and a real customer key are not deferred past the tracer.** The
+*connector* — the customer-installed component that calls providers directly and obeys the
+ranked list this gateway pushes — must identify itself to be pushed a list and to report
+token counts, and the spec requires metering to run for every connected customer from their
+first day, which a single hardcoded customer key cannot express. That work lands in the
+connector's own ExecPlan, immediately after the tracer. What stays deferred is **cohort
+multi-tenancy**: cross-customer cohort membership, which behavior 3 needs and which is a
+data-model change rather than an identity one.
 
 Persistence is no longer a non-goal at all. Behavior 1, as specified after
 [#6](https://github.com/hoomji/henry-ai-router/issues/6), requires a versioned target
@@ -107,9 +117,17 @@ passthrough adapter) because target-state routing (M2) and reservation-aware rou
 behavior 4) both consume per-request cost, and retrofitting it later would touch every
 adapter.
 
-Streaming: the tracer buffers responses. When streaming lands, the adapter contract gains
-a chunk-transform function rather than a stream object, keeping adapters pure; this is
+Streaming: the tracer buffers responses. When streaming lands *here*, the adapter contract
+gains a chunk-transform function rather than a stream object, keeping adapters pure; this is
 noted now so nobody designs adapters around whole-body assumptions.
+
+That deferral is about this contract only, and the distinction matters because "streaming is
+deferred" is now half false. Per [#8](https://github.com/hoomji/henry-ai-router/issues/8) the
+*connector* is in the streaming path from its first day — real chat traffic streams and the
+connector is what calls the provider — but it only relays bytes and counts tokens at the end,
+never transforming a chunk. The adapter's chunk transform is needed only when the gateway is
+mid-stream, which happens during an *interception window* (behavior 2) and not before. So:
+streaming pass-through ships with the connector; chunk transform stays deferred here.
 
 ## Routing seam (proposed)
 
@@ -145,6 +163,16 @@ noted now so nobody designs adapters around whole-body assumptions.
   missed. Keeping both states outside the seam is what lets it stay pure.
   Exceptions from `chooseProvider` remain reserved for genuine defects, which is what
   makes the fail-open wrapper's semantics clean.
+- **The same seam produces the pushed ranked list.** In normal operation the gateway is out
+  of the request path and routing reaches the customer as an ordered list of providers pushed
+  to the *connector* (ADR
+  [`0006`](../adr/0006-routing-authority-stays-gateway-side.md)). The control plane builds
+  that list by calling this function against the current snapshot and sorting by its
+  decision, rather than by a second ordering routine. This is the payoff of the purity
+  constraint: one implementation serves both the pushed list and the per-request choice the
+  gateway makes while it is in the path during an *interception window*. It also fixes where
+  policy lives — the connector evaluates no target and holds no policy, carrying only the
+  rule "on error, try the next provider in the list".
 
 ## Fail-open forwarding path (proposed)
 
@@ -491,6 +519,17 @@ margin, the `422` gained floor provenance and age, the store gained a decision-r
 table, and three rejected alternatives were added. Recorded in ADR
 [`0003`](../adr/0003-provenance-tiered-capability-catalogue.md), which amends ADR
 [`0001`](../adr/0001-declaration-time-vs-observed-infeasibility.md) in part.
+
+Revision note: 2026-08-15 — resolved
+[#8](https://github.com/hoomji/henry-ai-router/issues/8) (behavior sequence). Three changes,
+all of them corrections to things this document said that the sequencing decision made half
+true. The multi-tenancy/authn non-goal split in two: authn and a real customer key arrive with
+the *connector*, immediately after the tracer, while cohort multi-tenancy stays with behavior
+3. The streaming deferral split the same way: pass-through ships with the connector, chunk
+transform stays deferred on the adapter contract. And the routing seam gained the note that
+it also produces the pushed *ranked list*, which is the payoff of its purity constraint and
+the reason no second ordering routine exists. Recorded in ADR
+[`0006`](../adr/0006-routing-authority-stays-gateway-side.md).
 
 Revision note: 2026-08-15 — resolved
 [#13](https://github.com/hoomji/henry-ai-router/issues/13) (durability). Added *Durability

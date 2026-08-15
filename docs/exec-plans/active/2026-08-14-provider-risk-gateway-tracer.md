@@ -108,6 +108,33 @@ None yet.
   trigger instead.
   Date/Author: 2026-08-15 / henry.tran@uniblock.dev (confirmed), recorded by Claude
 
+- Decision: M1 and M2 are relabeled rather than reworked. M2 delivers behavior 1's
+  *decision engine*, not behavior 1 as a customer receives it; M1's in-path forwarding
+  server is behavior 2's future interception path, not a temporary scaffold. Nothing in
+  either milestone is discarded and no work in them changes.
+  Rationale: Grilling ticket [#8](https://github.com/hoomji/henry-ai-router/issues/8)
+  settled that the gateway is out of the request path in normal operation, so target-state
+  routing reaches a customer as a ranked list pushed to a *connector* — the
+  customer-installed component that calls providers directly — rather than as the
+  per-request choice these milestones implement. That could have meant M2 was partly wrong.
+  It does not, because `chooseProvider` is pure over a state snapshot: the same function
+  that picks a provider per request computes the ranked list to push. What changes is only
+  what these milestones are understood to deliver, and an implementer finishing M2 today
+  would otherwise reasonably believe behavior 1 was shippable. It is not until the
+  connector exists. Routing policy stays gateway-side per ADR
+  [`0006`](../../adr/0006-routing-authority-stays-gateway-side.md).
+  Date/Author: 2026-08-15 / henry.tran@uniblock.dev (confirmed), recorded by Claude
+
+- Decision: The work after this plan — the connector, then reservation-aware routing
+  (behavior 4) — lives in its own ExecPlan at
+  [`2026-08-15-connector-and-reservation-aware-routing.md`](2026-08-15-connector-and-reservation-aware-routing.md),
+  not as further milestones here.
+  Rationale: This plan's stated destination is M1 and M2, and its Plan of Work puts
+  behaviors 2–5 out of scope. Extending it would make its own scope untrue. The sequencing
+  decision itself (#8) is recorded in that plan's Decision Log and in the product spec's
+  *Behavior sequence and deferrals* section.
+  Date/Author: 2026-08-15 / henry.tran@uniblock.dev (confirmed), recorded by Claude
+
 - Decision: `chooseProvider` returns a binding reason alongside the chosen provider.
   Rationale: The spec requires both infeasibility reports to name why each candidate
   provider was rejected. A reason reconstructed from logs after the fact is not
@@ -158,6 +185,18 @@ plan's Decision Log) and where the implementation lives and in what language (th
 repository, TypeScript on Node, per this plan's Decision Log). The spec's remaining open
 questions — the pricing model, and the cross-customer signal-sharing agreement — are out
 of this plan's scope.
+
+One thing an implementer must understand about what these two milestones are for. In the
+finished product the gateway is **not** in the request path during normal operation: a
+*connector* installed at the customer's call site calls providers directly and obeys a
+ranked list the gateway pushes to it. That connector does not exist yet and is not built
+here. So M2 delivers behavior 1's decision engine — the target vocabulary, the measurement
+windows, the two infeasibility states, and the routing function that produces a decision —
+while the in-path HTTP server M1 builds is the shape the gateway takes later during an
+*interception window* (spec behavior 2), when it legitimately is in the path. Finishing
+this plan does not make behavior 1 shippable to a customer; it makes it demonstrable. See
+the Decision Log and
+[`2026-08-15-connector-and-reservation-aware-routing.md`](2026-08-15-connector-and-reservation-aware-routing.md).
 
 ## Acceptance Evidence
 
@@ -375,9 +414,11 @@ and updates the three documents that currently deny a runtime exists (`AGENTS.md
 first because every later behavior sits on top of it. M2 implements the first product
 behavior in full — the target vocabulary specified in the product spec plus its
 customer-facing HTTP surfaces — kept additive and behind the `chooseProvider` seam so it
-changes routing policy without touching the forwarding path. Pricing behaviors (2 and 4), cross-customer signals (3), and
-prompt translation (5) are out of this plan's scope until their open product decisions in
-the spec are resolved.
+changes routing policy without touching the forwarding path. Everything after M2 — the
+connector, then reservation-aware routing (behavior 4), then strain-triggered interception
+(behavior 2) — belongs to the successor plan named in the Decision Log; behaviors 3 and 5
+are deferred on triggers stated in the product spec's *Behavior sequence and deferrals*
+section.
 
 ## Concrete Steps
 
@@ -446,6 +487,16 @@ None yet; add M1's curl transcripts and M2's load-script output here as they are
   harness scripts are unaffected and remain the validation and gate entrypoints.
 
 ## Revision Note
+
+2026-08-15 — Recorded the behavior sequence resolved by grilling ticket
+[#8](https://github.com/hoomji/henry-ai-router/issues/8). No milestone work changed: M1 and
+M2 are relabeled, not reworked. The change is what they are understood to deliver — M2 is
+behavior 1's decision engine rather than behavior 1 as a customer receives it, and M1's
+in-path server is behavior 2's future interception path. Added the two Decision Log entries
+that say so, an orientation paragraph explaining the out-of-path architecture an implementer
+would otherwise not know about, and a pointer to the successor plan that carries the
+connector and behavior 4. Written because an implementer finishing M2 today would reasonably
+have concluded behavior 1 was shippable, and it is not until the connector exists.
 
 2026-08-15 — Rewrote M2 from a narrow prototype (`{p95_ms, cost_per_1k}` in a config file)
 to the spec's full target vocabulary plus its four customer-facing surfaces, dropped its

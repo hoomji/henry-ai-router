@@ -18,6 +18,39 @@ _Avoid_: Router, proxy, middleman
 A hosted third party that serves model requests.
 _Avoid_: Vendor, upstream, backend
 
+**Connector**:
+The component the customer installs at their call site. It calls *providers* directly,
+obeys the ranked list the *gateway* pushes, acknowledges the directive that opens or closes
+an *interception window*, reports token counts, and passes streamed responses through. It
+never holds routing policy — the *gateway* decides and the connector obeys, plus one local
+rule: on error, try the next provider in the pushed list.
+_Avoid_: Client, SDK, agent, shim, sidecar, proxy
+
+**Client**:
+Retired as a name for the *connector*. It already meant the customer's own application, a
+provider SDK, and any HTTP caller, so it could not identify our component without
+ambiguity. Retained here because ADRs
+[0004](docs/adr/0004-incidents-included-not-surcharged.md) and
+[0005](docs/adr/0005-strain-evidence-detection-internal.md) and the resolutions of
+[#4](https://github.com/hoomji/henry-ai-router/issues/4),
+[#7](https://github.com/hoomji/henry-ai-router/issues/7) and
+[#9](https://github.com/hoomji/henry-ai-router/issues/9) are written in the older
+vocabulary; there, "the client" means the *connector*.
+_Avoid_: Use *connector*
+
+**Ranked list**:
+The ordered sequence of providers a routing *directive* carries for one *workload*, and the
+whole of what a *connector* knows about routing. Distinct from a *target*, which the
+customer states and the connector never sees, and from a routing rule, which nobody states.
+_Avoid_: Mix, policy, route table, provider preferences
+
+**Directive**:
+The push through which the *gateway* delivers a *ranked list* to a *connector*, and the
+thing a connector acknowledges. The unit of control-plane delivery; the *ranked list* is its
+payload. A directive that opens or closes an *interception window* is the same mechanism
+carrying the gateway's own address.
+_Avoid_: Command, instruction, config push, update
+
 **Fail-open**:
 The property that customer traffic still reaches a provider when the gateway's own
 decision logic fails.
