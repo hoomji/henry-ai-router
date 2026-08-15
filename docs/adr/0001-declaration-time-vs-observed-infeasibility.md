@@ -1,6 +1,18 @@
 # Declaration-time and observed infeasibility are two states, not one
 
-Status: accepted (2026-08-15)
+Status: accepted (2026-08-15), amended in part (2026-08-15) by ADR
+[`0003`](0003-provenance-tiered-capability-catalogue.md)
+
+> **Amendment note.** The two-state model below is unchanged and remains in force. What
+> ADR 0003 narrows is the *strength* of the declaration-time claim: because no provider
+> publishes a latency floor and a per-model floor is wrong in both directions
+> ([#11](https://github.com/hoomji/henry-ai-router/issues/11)),
+> `infeasible_by_declaration` now means "no allowed provider **plausibly** can satisfy
+> this" rather than "no allowed provider can." A target is rejected only when it fails
+> the most optimistic candidate floor by more than that floor's own variance, and the
+> check may **abstain** — accepting the write — when every floor for a key has expired.
+> Read the closing paragraph of this record, on the catalogue accepted as a cost, as
+> superseded by ADR 0003.
 
 The product specification requires that a target no provider mix can satisfy be
 "reported, not silently best-effort." Resolving what that means

@@ -91,5 +91,32 @@ _Avoid_: Cause, error message, debug info
 
 **Allowed models**:
 The customer's required, non-empty list of models the gateway may route to. A blast
-radius, not a quality judgement — model quality is not a targetable dimension.
+radius, not a quality judgement — model quality is not a targetable dimension. An entry is
+a bare model name, optionally qualified with a host to pin one.
 _Avoid_: Model whitelist, quality floor, preferred models
+
+**Capability floor**:
+The best value a dimension can reach for one `(model, host, region, service_tier)` — the
+input *infeasible by declaration* checks a target against. Keyed per host, never per
+model: the same model on different hosts does not share a floor.
+_Avoid_: Benchmark, SLA, provider capability, model spec
+
+**Provenance**:
+The tier a capability floor came from and its age, carried on the floor itself and
+reported in every rejection. In precedence order: `measured`, `third_party`, `published`,
+`declared`. A floor whose tier has expired demotes rather than being used stale.
+_Avoid_: Source, origin, confidence, freshness
+
+**Abstain**:
+What the feasibility check does when every capability floor for a candidate has expired:
+it declines to decide and the write is accepted. Distinct from finding the target
+feasible — the gateway is not claiming the target can be met, only that it will not reject
+on a number it no longer stands behind.
+_Avoid_: Skip, pass, unknown, default-allow
+
+**Decision receipt**:
+The record of which capability floors and provenance a feasibility check ran against,
+committed with the target document write and keyed by its version. What makes a later
+floor correction a comparison rather than a reconstruction. Never part of the target
+document, which holds only what the customer authored.
+_Avoid_: Audit log, snapshot, history, metadata

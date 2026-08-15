@@ -84,7 +84,12 @@ A target consists of:
 - **`allowed_models`** — a required, non-empty list of models the gateway may route to.
   It is not a quality target and carries no quality scale; it is the customer's explicit
   blast radius. Requiring it is what makes declaration-time feasibility computable at
-  all, because it bounds the set of candidates.
+  all, because it bounds the set of candidates. An entry is a bare model name, meaning any
+  host the gateway can reach for that model, and may optionally be qualified with a host
+  (`claude-sonnet-4.5@bedrock`) to pin one. The distinction is not cosmetic: the same model
+  served by different hosts measured an 86% spread in p50 latency on a single day
+  ([#11](https://github.com/hoomji/henry-ai-router/issues/11)), so a bare entry and a
+  pinned entry can differ on whether a target is achievable at all.
 
 Model quality is not a targetable dimension. Scoring model quality would make this
 product a benchmarking service, which the non-goals exclude; `allowed_models` gives the
@@ -126,9 +131,33 @@ depends on.
 Infeasibility is two distinct states with different truth conditions, different detection
 latencies, and different meanings to the customer. They must never be collapsed into one.
 
-**`infeasible_by_declaration`** — no allowed provider *can* satisfy the target, knowable
-before any traffic flows. Checked synchronously when the target document is written; the
-write is rejected. The customer cannot deploy an impossible target.
+**`infeasible_by_declaration`** — no allowed provider *plausibly can* satisfy the target,
+knowable before any traffic flows. Checked synchronously when the target document is
+written; the write is rejected. The customer cannot deploy an impossible target.
+
+The check runs against a **capability floor** per `(model, host, region, service_tier)`,
+and the strength of the word *plausibly* is deliberate. No provider publishes a latency
+floor in any form, so floors are sourced by measurement and carry a **provenance** tier and
+an age ([#12](https://github.com/hoomji/henry-ai-router/issues/12), ADR
+[`0003`](../adr/0003-provenance-tiered-capability-catalogue.md)). Three consequences are
+customer-visible and belong in this specification rather than in the design:
+
+- **Rejection is biased against itself.** A target is rejected only when it fails the most
+  optimistic candidate floor by more than that floor's own variance. A too-optimistic floor
+  costs the customer a wait until `unmet`; a too-pessimistic one costs them a capability
+  they could have had, silently and with no signal, since a rejected target produces no
+  traffic to prove us wrong. When no floor for a candidate can be trusted — every source for
+  it has gone stale — the check **abstains and the write is accepted**. The gateway does not
+  reject a customer's target on the strength of a number it no longer stands behind.
+- **A rejection must disclose its own basis.** In addition to the dimension, the requested
+  value, the best achievable value, and the provider achieving it, the report names the
+  floor's source and its age, and states any workload shape it assumed for a cost target
+  ("assuming 1:3 input:output under 200k context, standard tier"). The customer's only
+  recourse against a wrong floor is to dispute it, and a bare number is not disputable.
+- **A corrected floor never invalidates a live target document.** A target already accepted
+  stays accepted and stays in force; only a customer write changes what the document says.
+  When a correction means a target would no longer be accepted, the status resource says so
+  and the customer decides whether to rewrite.
 
 **`unmet`** — no mix of allowed providers *has* held the target over the measurement
 window. A runtime state, entered after two consecutive full windows in which the target
@@ -160,6 +189,17 @@ Reporting reaches the customer through four surfaces:
    the same reason their target is unmet.
 4. A response header on requests served while the workload is `unmet`, so a customer can
    correlate an individual slow request with a known state.
+
+There is no third infeasibility state for "the gateway's own capability floor was wrong",
+and that gap is closed deliberately rather than left open. A wrong floor is the one path on
+which this section's promise can fail without anyone noticing: it presents to the customer
+as ordinary provider degradation, indistinguishable from the `unmet` they would see if the
+provider had genuinely slowed. So the state stays `unmet`, and the *correction* is reported
+separately — flagged on the status resource whenever a target was accepted against a floor
+since corrected, and delivered as a notification in the single case where the customer is
+otherwise misled: a workload already `unmet` on a dimension whose corrected floor now
+exceeds their target. A routine floor refresh is not an event a customer hears about; being
+told wrong is.
 
 Target state is deliberately **not** reported on the bill; entangling behavior 1 with
 billing would couple it to the pricing decisions that remain open.
@@ -223,8 +263,14 @@ of this behavior is that the gateway's choices are predictable without a routing
       `cost_per_1k_tokens_usd`, and `success_rate` and observe the gateway change provider
       mix in response to drifting provider performance without a routing rule (behavior 1).
 - [ ] A target no allowed provider can satisfy is rejected when written, with a report
-      naming the dimension, the requested value, and the best achievable value and the
-      provider achieving it (behavior 1, `infeasible_by_declaration`).
+      naming the dimension, the requested value, the best achievable value and the
+      provider achieving it, and the provenance and age of the capability floor the
+      rejection rests on (behavior 1, `infeasible_by_declaration`).
+- [ ] A target whose candidate capability floors have all gone stale is accepted rather
+      than rejected, and the abstention is observable (behavior 1).
+- [ ] A capability floor correction leaves every existing target document valid and in
+      force, flags the affected workloads on the status resource, and notifies only a
+      workload already `unmet` on the corrected dimension (behavior 1).
 - [ ] A target that stops holding at runtime raises `unmet` after two consecutive missed
       windows and clears after two consecutive held windows, visible on the status
       resource, the notification, and the response header, with a per-provider reason for
@@ -252,6 +298,7 @@ of this behavior is that the gateway's choices are predictable without a routing
 | Is incident-only pricing (behavior 2) compatible with usage-decay pricing (behavior 4) in one business model? | No | henry.tran@uniblock.dev | Open |
 | Can a customer target a **monthly cost budget** rather than a unit rate? | No — behavior 1 ships with the unit rate | henry.tran@uniblock.dev | Deferred ([#6](https://github.com/hoomji/henry-ai-router/issues/6)). A unit rate is decidable from a state snapshot; a budget requires persistent spend accounting and an exhaustion policy (hard-stop, degrade, or notify), turning provider state from a snapshot into a ledger. Specify as its own behavior if wanted. |
 | Should **error rate** be targetable separately from `success_rate`? | No | henry.tran@uniblock.dev | Deferred ([#6](https://github.com/hoomji/henry-ai-router/issues/6)). For a router the two collapse: a 429 the gateway re-routed is not a customer-visible error. Revisit only if a customer needs to see provider-level error pressure they are shielded from. |
+| Should a customer be able to see, or set, the confidence the feasibility check needs before it rejects? | No — the margin ships as a fixed rule | henry.tran@uniblock.dev | Open ([#12](https://github.com/hoomji/henry-ai-router/issues/12)). Rejection is biased optimistic with a variance-based margin the customer cannot see or tune. A customer who genuinely wants a strict pre-flight check ("reject unless you are certain") has no way to ask for one, and a customer who wants none has no way to opt out. Revisit once abstention and false-`unmet` rates are observable. |
 | Should **throughput / rate-limit headroom** be targetable? | No | henry.tran@uniblock.dev | Deferred ([#6](https://github.com/hoomji/henry-ai-router/issues/6)). Headroom is the signal behavior 3 shares across customers, not an outcome an individual customer states. Revisit when behavior 3 is specified. |
 
 ## Delivery evidence

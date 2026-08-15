@@ -69,7 +69,8 @@ API surface.
         providers/
           adapter.ts          the ProviderAdapter interface
           passthrough.ts      M1's sole adapter
-          capabilities.ts     declared capability floor per model (feasibility input)
+          capabilities.ts     capability floors keyed (model, host, region, tier), with
+                              provenance and TTL (feasibility input)
         dev/
           stubUpstream.ts     canned-completion upstream for credential-free testing
           load.ts             M2 load script: prints traffic split, measured p95, status
@@ -206,11 +207,12 @@ and silently dropping an unrecognized dimension would let a customer believe the
 stated a target they had not.
 
 `targets/feasibility.ts` runs the declaration-time check on every write, against the
-declared capability floor per model in `providers/capabilities.ts`, and returns `422` with
-the dimension, the requested value, the best achievable value, and the provider achieving
-it. That catalogue is the weakest assumption in this design: it must be maintained by hand
-and can drift silently from provider reality. It is named as a gap in the wayfinding map
-rather than solved here.
+capability catalogue in `providers/capabilities.ts`, and returns `422` with the dimension,
+the requested value, the best achievable value, the provider achieving it, and — per
+[#12](https://github.com/hoomji/henry-ai-router/issues/12) — the provenance and age of the
+floor it decided against. A bare number is not disputable, and disputing it is the
+customer's only recourse against a floor that is wrong. The check may also decline to
+answer; see *The capability catalogue* below.
 
 `targets/unmet.ts` holds the two-window state machine, entering `unmet` after two
 consecutive missed windows and leaving after two consecutive held windows, symmetric by
@@ -225,13 +227,112 @@ customer's notification endpoint is often down for the same reason their target 
 and a notification queue that grows without bound during an incident is a worse failure
 than a missed notification.
 
+## The capability catalogue (proposed)
+
+Resolved by [#12](https://github.com/hoomji/henry-ai-router/issues/12) on the evidence of
+[#11](https://github.com/hoomji/henry-ai-router/issues/11); the decision is recorded in ADR
+[`0003`](../adr/0003-provenance-tiered-capability-catalogue.md), which also amends ADR
+[`0001`](../adr/0001-declaration-time-vs-observed-infeasibility.md). This section replaces
+the note that previously called the catalogue this document's weakest assumption. The
+weakness was real but misdiagnosed: the problem was never upkeep discipline, it was that
+the catalogue's key was wrong and its inputs largely do not exist.
+
+**The key.** A **capability floor** is keyed `(model, host, region, service_tier)`, not per
+model. Claude Sonnet 4.5 on 2026-08-15 measured p50 744 ms on `vertexAnthropic`, 795 ms on
+`anthropic`, and 1383 ms on `bedrock` — 86% spread on p50, 165% on p95, same model, same
+day. A per-model floor must pick the optimistic value or the pessimistic one and is wrong
+in one direction either way. Bedrock's `service_tier` alone gives one model four latency
+profiles from a per-request flag.
+
+An `allowed_models` entry stays a bare model string, meaning *any host we can reach for
+this model*, and may optionally be qualified (`claude-sonnet-4.5@bedrock`) when the
+customer wants to pin one. Bare entries collapse optimistically across hosts. This keeps
+`allowed_models` a blast radius rather than a routing table, and gives the `422` something
+worth saying: "achievable at 780 ms on `vertexAnthropic`, but not on the `bedrock` host you
+pinned" is a diagnosis; a bare number is not.
+
+**Provenance and refresh.** Every floor carries the tier it came from and its age. Tiers
+resolve in precedence order, and an expired floor demotes to the next one down rather than
+being used stale:
+
+| Tier | Source | TTL |
+|---|---|---|
+| `measured` | Our own traffic, via `routing/stats.ts` | Rolls continuously |
+| `third_party` | Vercel AI Gateway's unauthenticated endpoints API (live p50/p95, uptime per (model, host)) | Polled daily, expires at 7 days |
+| `published` | Provider rate cards — cost only; no provider publishes a latency floor | 30 days |
+| `declared` | Hand-entered, with a written justification | 90 days |
+
+When every tier for a key has expired, feasibility **abstains** and the write is accepted.
+The owner is henry.tran@uniblock.dev, but the enforcement is the TTL, not the owner: the
+accountable signal is the *abstention rate*, which is visible, rather than a review cadence,
+which is remembered. `measured` stays in process. The other three ship as a generated
+artifact under `docs/generated/`, refreshed by a scheduled job that opens a pull request, so
+the gateway reads a local file and a third-party schema change breaks a job rather than a
+customer's `PUT`. Every floor change is then a dated, reviewable diff. The artifact and its
+producer land with M2, when there is a runtime to read it; until then this section is the
+specification for both.
+
+**Direction of error.** Deliberately optimistic. A target is rejected only when it fails
+the most optimistic candidate floor by a margin exceeding that floor's own variance,
+derived from the published p50/p95 spread where one exists. A floor with no variance behind
+it may inform the best-achievable value in a rejection but may never be the basis for one.
+The reasoning is in ADR 0003: a too-optimistic floor surfaces as `unmet` two windows later,
+while a too-pessimistic floor produces no traffic, no measurement, and no evidence we were
+wrong. State the consequence plainly rather than letting a reader discover it — **at M2,
+with no measured floors, latency targets are effectively never rejected at write time and
+cost targets are.**
+
+**Cost floors are a function of workload shape.** A single model carries a ~10x spread
+across input versus output rates, context-length tiers, cache read/write, batch and
+priority service tiers, and inference geography. The cheapest achievable rate is
+well-defined and unachievable by any real workload, so a naive cost floor is maximally
+optimistic in a way that guarantees `unmet`. At write time there is no traffic, so the floor
+is computed against a stated-or-defaulted shape and the `422` must disclose the assumption
+("assuming 1:3 input:output under 200k context, standard tier"). Once the workload has
+traffic, its observed shape replaces the assumption and feeds the `unmet` evaluation. A
+customer may state the shape; requiring it would put a modeling exercise in front of someone
+who wants to state one number.
+
+**When a floor proves wrong.** This is the one path on which the specification's promise —
+infeasibility is reported, never silently best-effort — can fail without anyone noticing,
+because a bad floor presents to the customer as ordinary provider degradation. There is
+still no third state: ADR 0001's two-state vocabulary is load-bearing across the status
+schema, the notification trigger, and the routing seam's return type, and a third state pays
+that cost again to describe a defect in *our* data rather than a property of the customer's
+workload. Instead, three mechanisms:
+
+- **A decision receipt.** Each accepted write commits, in the same transaction as the
+  document, the floor values and provenance the check ran against, keyed by document
+  version. This makes the correction check a comparison rather than a reconstruction of a
+  past decision from logs — the same objection this document already raises against
+  reconstructed binding reasons. It lives in a sibling table in the target store, never
+  inside the target document: the document is the customer's statement of intent and a
+  whole-document `PUT`, so fields they did not author must not appear in it.
+- **A flag on the status resource.** A correction never invalidates a live document. The
+  workload keeps routing and the target stays in force; the status resource reports that the
+  target was accepted against a floor since corrected, and would not be accepted on current
+  data. The customer decides whether to rewrite. Nothing but a customer write may change the
+  validity of the document specified as their single source of truth.
+- **A notification, but only for the sharp case.** A workload *already* `unmet` on a
+  dimension whose corrected floor now exceeds its target. That is the case where the
+  customer is watching what they believe is provider degradation and is in fact watching us
+  having told them wrong. Fanning out a signed post per touched workload on every routine
+  refresh was rejected — it reintroduces exactly the notification volume the bounded-retry
+  design exists to prevent.
+
+**What genuinely remains unresolved.** A cold-start floor is trusted, not verified: we have
+no way to validate a `third_party` floor against ground truth for a model we never route to,
+because the only thing that would validate it is the traffic whose feasibility we are trying
+to decide. That sentence is the residue of what this document previously called its weakest
+assumption.
+
 ## Durability and the target store (proposed)
 
 Resolved by [#13](https://github.com/hoomji/henry-ai-router/issues/13); the concurrency
 choice and its trade-off are recorded in ADR
 [`0002`](../adr/0002-durable-target-store-with-cross-process-concurrency.md). The **target
-store** is SQLite in WAL mode via Node's built-in `node:sqlite` — one file, three tables,
-zero runtime dependencies. It requires Node 24 or newer, which raises the engines floor
+store** is SQLite in WAL mode via Node's built-in `node:sqlite` — one file, four tables
+(the fourth being decision receipts, added by #12), zero runtime dependencies. It requires Node 24 or newer, which raises the engines floor
 from the 20 recorded in the ExecPlan's Decision Log.
 
 Behavior 1 produces three pieces of state, and they get three different answers rather
@@ -242,6 +343,7 @@ than one store-everything default:
 | Target document | Committed before ack: `PUT /v1/targets` returns `200` only once the write is durable | Customer-authored and unrecoverable if lost. A version the customer has seen but the store has not committed makes "single source of truth" untrue. Writes are rare, human-driven, and off the data path, so the latency is affordable. |
 | Measurement windows | Not durable. In-memory, rebuilt from traffic; a per-window *summary* is persisted at each window close, best-effort | Raw samples are derived and cheap to rebuild, and persisting a hot rolling window would put the store on the request path. Summaries exist only so several processes can be merged. |
 | `unmet` state and its two-window counters | Persisted at window close, best-effort, tolerating loss of at most the last window | Customer-visible state reported on three surfaces. Nothing acks it, so committed-before-ack buys nothing; losing one window delays an entry by roughly five minutes and never produces a wrong state. |
+| Decision receipts | Committed in the same transaction as the document write, in a sibling table keyed by document version | The receipt is what makes a later floor correction a comparison rather than a reconstruction (#12). Same-transaction because a committed document without its receipt is a decision we cannot audit. Pruned when its document version is superseded. |
 | Notification signing secret | Not in the store at all — it stays in the config surface | A credential with a different lifecycle. In the store, every backup, dump, and document read path becomes a secret-handling path. |
 
 **Restart.** The state machine survives; the samples do not. `unmet` and its counters are
@@ -333,6 +435,18 @@ says where the store lives; it never says what the targets are.
 - Deciding `unmet` inside `chooseProvider`: rejected — a single call cannot know whether
   two windows have been missed, and giving the seam that memory would make it stateful,
   breaking the snapshot purity the Decision Log's portability claim depends on.
+- A third infeasibility state for "our floor was wrong": rejected — ADR 0001's two-state
+  vocabulary is load-bearing across three contracts, and the condition describes a defect
+  in our data rather than a property of the customer's workload. It gets a receipt, a
+  status flag, and a narrow notification instead.
+- Polling the third-party capability source from the gateway at runtime: rejected — it
+  puts a new outbound failure surface next to a customer's write path. The unmeasured
+  tiers are a committed artifact refreshed by a scheduled job, so a schema change upstream
+  breaks a job rather than a `PUT`.
+- Re-validating and invalidating existing target documents when a floor is corrected:
+  rejected — a background job that retroactively breaks a live configuration because *our*
+  data changed is worse than the stale floor it fixes, and only a customer write may change
+  the validity of their single source of truth.
 - Serving management endpoints from `server.ts`: rejected — control-plane failures would
   share a fate with the forwarding path, contradicting the fail-open boundary.
 
@@ -365,6 +479,18 @@ above; `routing/`, `targets/`, and `providers/` contain no imports of `server.ts
 `management/`, or `node:http`; `chooseProvider` returns a decision carrying a binding
 reason; and the M1/M2 transcripts in the ExecPlan exist. When that check is run, record
 the date and move State to `Verified`.
+
+Revision note: 2026-08-15 — resolved
+[#12](https://github.com/hoomji/henry-ai-router/issues/12) (capability catalogue) on the
+evidence of [#11](https://github.com/hoomji/henry-ai-router/issues/11). Added *The
+capability catalogue*, which replaces the note calling the catalogue this document's
+weakest assumption; the residue is narrowed to one sentence about cold-start floors being
+trusted rather than verified. The floor's key changed from per-model to
+`(model, host, region, service_tier)`, feasibility gained an abstention and an optimistic
+margin, the `422` gained floor provenance and age, the store gained a decision-receipts
+table, and three rejected alternatives were added. Recorded in ADR
+[`0003`](../adr/0003-provenance-tiered-capability-catalogue.md), which amends ADR
+[`0001`](../adr/0001-declaration-time-vs-observed-infeasibility.md) in part.
 
 Revision note: 2026-08-15 — resolved
 [#13](https://github.com/hoomji/henry-ai-router/issues/13) (durability). Added *Durability
