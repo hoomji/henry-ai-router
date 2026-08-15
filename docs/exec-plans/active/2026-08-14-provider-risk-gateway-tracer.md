@@ -49,11 +49,7 @@ None yet.
   Rationale: The harness that governs this work — the product spec, this plan, the
   validation and gate commands — is already here, and a separate repository would
   duplicate it and split review. The repository owner confirmed the choice directly, so
-  it is no longer an open question gating implementation. `ARCHITECTURE.md` requires a
-  hard-to-reverse choice like this to be written down as an Architecture Decision Record
-  (a short file stating context, decision, and consequences), so M1 records it at
-  `docs/adr/0001-implementation-location-and-language.md` as part of its documentation
-  work rather than as a separate approval gate.
+  it is no longer an open question gating implementation.
   Date/Author: 2026-08-14 / henry.tran@uniblock.dev (confirmed), recorded by Claude
 
 - Decision: The gateway is written in TypeScript on Node.js (version 20 or newer), and is
@@ -98,8 +94,7 @@ are:
   documentation — and are unrelated to the gateway's own language; they stay in Python.
 - `ARCHITECTURE.md` — states that this repository owns product *thinking* and that adding
   an implementation is an architectural change requiring an ADR at
-  `docs/adr/NNNN-short-slug.md`. No ADRs exist yet; M1 writes the first one and updates
-  this document's system boundary, which currently denies that any implementation exists.
+  `docs/adr/NNNN-short-slug.md`. No ADRs exist yet;
 - `docs/product-specs/provider-risk-management-gateway.md` — the product specification
   this plan implements toward. Its acceptance criteria include a fail-open boundary
   ("with the gateway down, customer traffic still reaches the configured provider") and
@@ -173,13 +168,7 @@ server under `gateway/src/dev/stubUpstream.ts` — a tiny HTTP server returning 
 completion — so the tracer is testable with no provider credentials. Add npm scripts
 `build` (`tsc`), `start`, `stub`, and `test`.
 
-Documentation work in the same milestone: write `docs/adr/0001-implementation-location-and-language.md`
-recording the two decisions already in this plan's Decision Log (implementation in this
-repository under `gateway/`; TypeScript on Node with a Rust/Go data-plane split as the
-named future path) with their context and consequences, and link it from
-`ARCHITECTURE.md`'s Decisions section. Update `ARCHITECTURE.md`'s system boundary and
-component table, which currently state that no implementation exists. Update `AGENTS.md`'s
-command list with the build, start, and test commands, and update
+Update `AGENTS.md`'s command list with the build, start, and test commands, and update
 `docs/harness/manifest.yaml` so `commands.start` is the real start command and the
 `startable_runtime` capability moves from `missing` to `verified` with the evidence that
 proves it.
@@ -204,7 +193,7 @@ gateway process, the same request returns HTTP 200 plus the `x-gateway-failopen:
 header. Then run `python scripts/harness-validate.py .` and expect it to pass with the
 manifest's new start command, and `python scripts/check.py` for the full gate.
 
-Rollback and recovery: the milestone is additive (new directory, new ADR, doc edits);
+Rollback and recovery: the milestone is additive (new directory, doc edits);
 revert the commit to recover. Steps are idempotent — reinstalling, rebuilding, and
 restarting the processes are always safe.
 
@@ -246,7 +235,7 @@ question owned by the spec, not this plan).
 
 ## Plan of Work
 
-M1 is the additive tracer: it creates the runtime under `gateway/`, records the first ADR,
+M1 is the additive tracer: it creates the runtime under `gateway/`,
 and updates the three documents that currently deny a runtime exists (`AGENTS.md`,
 `ARCHITECTURE.md`, `docs/harness/manifest.yaml`). It proves the spec's fail-open boundary
 first because every later behavior sits on top of it. M2 is an explicitly labeled prototype

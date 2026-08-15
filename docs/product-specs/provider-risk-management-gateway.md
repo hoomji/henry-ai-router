@@ -106,7 +106,6 @@ must do if built.
 |---|---|---|---|
 | Which of the five behaviors is the initial wedge to build first? | Yes — blocks any ExecPlan milestone ordering | henry.tran@uniblock.dev | Open |
 | Is incident-only pricing (behavior 2) compatible with usage-decay pricing (behavior 4) in one business model? | No | henry.tran@uniblock.dev | Open |
-| Does implementation live in this repository or a separate one? | Yes — first ADR per `ARCHITECTURE.md` | henry.tran@uniblock.dev | Resolved 2026-08-14: in this repository under `gateway/`, written in TypeScript on Node, with the proxy data path kept thin so it can move to Rust or Go later. Rationale in `docs/exec-plans/active/2026-08-14-provider-risk-gateway-tracer.md`; ADR to be recorded at `docs/adr/0001-implementation-location-and-language.md` during M1. |
 
 ## Delivery evidence
 
