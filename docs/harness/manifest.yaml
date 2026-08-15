@@ -1,0 +1,51 @@
+# Facts about this repository's harness, not aspirations.
+# Validate with: python scripts/harness-validate.py .
+version: 1
+owners:
+  harness: "henry.tran@uniblock.dev"
+entrypoints:
+  guidance: "AGENTS.md"
+  architecture: "ARCHITECTURE.md"
+  design: "docs/design-docs/index.md"
+  tracer: "docs/harness/tracer-workflow.md"
+knowledge_store:
+  design_docs: "docs/design-docs/index.md"
+  exec_plans: "docs/exec-plans/index.md"
+  generated: "docs/generated/index.md"
+  product_specs: "docs/product-specs/index.md"
+  references: "docs/references/index.md"
+commands:
+  setup: "python scripts/setup.py"
+  start: "unknown"
+  check: "python scripts/harness-validate.py ."
+  test: "python scripts/check.py"
+  validate: "python scripts/harness-validate.py ."
+capabilities:
+  reproducible_setup:
+    status: "verified"
+    evidence:
+      - "command: python scripts/setup.py"
+      - "scripts/setup.py"
+  startable_runtime:
+    status: "missing"
+    evidence:
+      - "ARCHITECTURE.md"
+  harness_contract_validation:
+    status: "verified"
+    evidence:
+      - "command: python scripts/harness-validate.py ."
+  repository_gate:
+    status: "verified"
+    evidence:
+      - "command: python scripts/check.py"
+  automated_tests:
+    status: "missing"
+    evidence:
+      - "ARCHITECTURE.md"
+  continuous_integration:
+    status: "missing"
+    evidence:
+      - "ARCHITECTURE.md"
+policies: []
+freshness:
+  review_after_days: 90
