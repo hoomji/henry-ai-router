@@ -6,8 +6,7 @@ private conversations, or human memory. Capture and retire entries with
 
 | Reference | Source | Version or retrieved | Repository consumers | Owner | Review date |
 |---|---|---|---|---|---|
-
-_No references yet._
+| [Strain-signal anonymization prior art](./2026-08-15-strain-signal-anonymization.md) | Multiple (Cloudflare, Downdetector, W3C NEL, CrUX, RAPPOR, Privacy Sandbox, OpenRouter, Helicone) | 2026-08-15 | Provider-risk gateway spec, behavior 3 (issue #5) | hoomji | 2027-02-15 |
 
 ## Entry contract
 
