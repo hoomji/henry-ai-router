@@ -55,6 +55,12 @@ The single versioned document holding a customer's workloads and their targets. 
 source of truth; the management API and dashboard are views onto it.
 _Avoid_: Config, settings, policy file
 
+**Target store**:
+The durable home of the target document. Distinct from the document, which is the
+customer's statement of intent, and from the configuration surface, which the gateway
+operator sets and which never contains targets.
+_Avoid_: Database, persistence layer, backing store
+
 **Window**:
 The span over which a dimension is measured — trailing 5 minutes or 200 requests,
 whichever spans longer.

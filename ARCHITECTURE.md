@@ -35,6 +35,8 @@ ADRs live at `docs/adr/NNNN-short-slug.md`.
 
 - [`0001`](docs/adr/0001-declaration-time-vs-observed-infeasibility.md) — declaration-time
   and observed infeasibility are two states, not one.
+- [`0002`](docs/adr/0002-durable-target-store-with-cross-process-concurrency.md) — the
+  target document lives in a durable store designed for concurrent writers.
 
 ## Domain language
 

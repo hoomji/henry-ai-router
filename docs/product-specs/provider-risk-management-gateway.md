@@ -182,6 +182,19 @@ of this behavior is that the gateway's choices are predictable without a routing
   (rejected at write time) or `unmet` (raised at runtime). Each report must name the
   dimension, the target, and the binding reason. See
   [Target-state routing in detail](#target-state-routing-in-detail).
+- A target change takes effect within approximately five seconds of being written, not
+  instantly. A successful write to the target document means the change is *committed*,
+  not that it is already in force for every in-flight request. Reads of the document
+  reflect it immediately; routing behavior follows within that bound.
+- If the gateway's target storage is unavailable or corrupt at startup, traffic is
+  forwarded to the customer's configured provider without target-state routing, and the
+  management surfaces report the failure. Targets are never treated as absent because
+  storage failed: an unreadable store and a customer who has stated no targets must not
+  look alike.
+- A workload's `unmet` state survives a gateway restart; its measurement window does not.
+  For the first window after a restart a workload may be reported as `unmet` and
+  `insufficient_data` at once — the first is a claim about the past, the second about the
+  present.
 - Cross-customer strain signals (behavior 3) must be anonymized and aggregated; one
   customer's traffic pattern must not be inferable by another.
 - Incident detection (behavior 2) must declare incident start and end explicitly so
