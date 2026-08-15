@@ -53,7 +53,22 @@ None yet.
   it is no longer an open question gating implementation.
   Date/Author: 2026-08-14 / henry.tran@uniblock.dev (confirmed), recorded by Claude
 
-- Decision: The gateway is written in TypeScript on Node.js (version 20 or newer), and is
+- Decision: M2 ships a real durable target store rather than an in-memory stand-in, and
+  the store is designed for concurrent writer processes from the start. The engines floor
+  moves from Node 20 to Node 24, and the store is SQLite in WAL mode through Node's
+  built-in `node:sqlite`, keeping runtime dependencies at zero.
+  Rationale: Grilling ticket [#13](https://github.com/hoomji/henry-ai-router/issues/13)
+  resolved durability. M2's acceptance criteria are about customer-visible target state,
+  and a state machine that resets on restart cannot demonstrate them honestly. Concurrency
+  is designed in rather than deferred because a single-writer design would have to be
+  undone rather than extended — measurement windows, the sample floor, `unmet` evaluation,
+  and notification de-duplication all take a different shape under several writers. The
+  full trade-off, including why not Postgres and why not `better-sqlite3` on Node 20, is
+  in ADR
+  [`0002`](../../adr/0002-durable-target-store-with-cross-process-concurrency.md).
+  Date/Author: 2026-08-15 / henry.tran@uniblock.dev (confirmed), recorded by Claude
+
+- Decision: The gateway is written in TypeScript on Node.js (version 24 or newer), and is
   structured so its request-forwarding path can later be reimplemented in Rust or Go
   without rewriting the routing policy.
   Rationale: This gateway is an HTTP reverse proxy that streams model responses back to
@@ -165,7 +180,7 @@ Goal: the first startable runtime. A minimal HTTP service in TypeScript exposing
 URL, and returning the upstream response unchanged.
 
 Work: create `gateway/` at the repository root containing a `package.json` (name
-`gateway`, `"type": "module"`, engines Node >= 20), a `tsconfig.json` targeting a modern
+`gateway`, `"type": "module"`, engines Node >= 24), a `tsconfig.json` targeting a modern
 Node module setting, and `src/`. Prefer Node's built-in `node:http` server and the global
 `fetch` for the upstream call so the tracer starts with zero runtime dependencies; the
 only expected development dependency is `typescript` itself. Any additional dependency
@@ -294,7 +309,18 @@ Work, in the order it should land:
    - `x-gateway-target-unmet: <dimension>` on responses served while the workload is
      `unmet`.
 
-7. **Load script** under `gateway/src/dev/` sending a few hundred requests, printing the
+7. **Target store.** SQLite in WAL mode via `node:sqlite` (one file, path from the config
+   file or `GATEWAY_STORE_PATH`), holding the target document, the persisted `unmet` state
+   and its counters, and per-process window summaries. Per
+   [#13](https://github.com/hoomji/henry-ai-router/issues/13) and ADR
+   [`0002`](../../adr/0002-durable-target-store-with-cross-process-concurrency.md): the
+   document write commits before the `200`; the `409` and the `unmet` transition both use
+   the store's compare-and-set; the data path reads an in-memory copy refreshed by polling
+   the version, never the store; and an unreadable store at boot yields passthrough
+   forwarding with a failing management surface rather than a refusal to start. Rolling
+   windows stay in memory — only the summary at each window close is written.
+
+8. **Load script** under `gateway/src/dev/` sending a few hundred requests, printing the
    final split, the measured p95, and the current status resource.
 
 Nothing here may touch the M1 forwarding path or leak server types into
@@ -305,7 +331,8 @@ Completion criterion: the traffic split changes when the target changes; an
 arithmetically impossible target is rejected at write time with a named best-achievable
 value; a target that stops holding raises `unmet` after two windows and clears after two;
 a conflicting pair of ceilings yields the lower-priority one and fails the request instead
-when that dimension is `hard`; and a concurrent write with a stale version gets a `409`.
+when that dimension is `hard`; a concurrent write with a stale version gets a `409`; and a
+workload in `unmet` is still in `unmet` after the process is restarted.
 
 Verification: run the load script twice with different targets and compare printed splits.
 Then, each producing its named artifact in "Artifacts and Notes":
@@ -316,6 +343,10 @@ Then, each producing its named artifact in "Artifacts and Notes":
   resource to report `unmet`, a signed notification to arrive, and subsequent responses to
   carry `x-gateway-target-unmet`. Restore the stubs and expect the state to clear only
   after two held windows, not one.
+- Drive a workload into `unmet`, restart the gateway process, and confirm the status
+  resource still reports `unmet` with its binding reason, that no duplicate entry
+  notification fires, and that the workload reports `insufficient_data` for its dimensions
+  until the window refills. This is the criterion #13 exists to produce.
 - Repeat the degradation with the notification endpoint refusing connections, and confirm
   the status resource still reports `unmet` — this is the guarantee that makes dropping
   notifications acceptable.
@@ -409,7 +440,7 @@ None yet; add M1's curl transcripts and M2's load-script output here as they are
   types. This is the contract a reimplemented data plane would have to honor.
 - Environment variables `UPSTREAM_BASE_URL` and `FORCE_ROUTER_ERROR` — M1's only
   configuration surface.
-- Runtime: Node.js 20 or newer, TypeScript compiled with `tsc`. Node standard library
+- Runtime: Node.js 24 or newer, TypeScript compiled with `tsc`. Node standard library
   (`node:http`, global `fetch`) preferred; any third-party runtime dependency must be
   recorded in the Decision Log with rationale before being added. The repository's Python
   harness scripts are unaffected and remain the validation and gate entrypoints.

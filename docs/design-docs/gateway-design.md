@@ -15,7 +15,7 @@
 The product spec requires a gateway whose defining promise is provider risk management:
 fail-open forwarding, target-state routing, and later incident-only interception,
 cross-customer strain signals, and prompt translation. The ExecPlan's Decision Log fixes
-the platform: TypeScript on Node.js 20+, inside this repository, with the request data
+the platform: TypeScript on Node.js 24+, inside this repository, with the request data
 path kept thin enough to reimplement in Rust or Go later without rewriting routing policy
 or provider adapters. This document scopes how the code is shaped to honor those
 decisions. It does not restate required behavior (the spec owns that) or sequence the
@@ -28,18 +28,27 @@ future non-TypeScript data plane could honor; a routing seam that is pure policy
 state snapshot; a config surface that grows without breaking the two-variable tracer.
 
 Non-goals: designing behaviors 2–5 in detail (their product decisions are open); multi-
-tenancy, authn, and deployment topology — still premature before the tracer.
+tenancy and authn — still premature before the tracer. Deployment topology is a partial
+exception, noted below.
 
-Persistence is no longer fully a non-goal. Behavior 1, as specified after
+Persistence is no longer a non-goal at all. Behavior 1, as specified after
 [#6](https://github.com/hoomji/henry-ai-router/issues/6), requires a versioned target
-document with optimistic concurrency and a per-customer notification secret. M2 may hold
-both in memory against simulated providers — and this document assumes it does — but the
-first real customer forces durable storage, and the seam should not assume otherwise.
+document with optimistic concurrency and a per-customer notification secret.
+[#13](https://github.com/hoomji/henry-ai-router/issues/13) resolved that M2 ships the real
+store rather than an in-memory stand-in, and that the store is designed for concurrent
+writers from the first milestone (ADR
+[`0002`](../adr/0002-durable-target-store-with-cross-process-concurrency.md)). See
+*Durability and the target store* below.
+
+Deployment topology consequently could not be kept fully out of scope: designing for
+concurrent writers presumes more than one gateway process. Multi-tenancy and authn remain
+non-goals — the store carries a customer key column with a single hardcoded value and no
+API surface.
 
 ## Module layout (proposed)
 
     gateway/
-      package.json            name "gateway", "type": "module", engines node >= 20
+      package.json            name "gateway", "type": "module", engines node >= 24
       tsconfig.json
       src/
         server.ts             HTTP surface + fail-open wrapper (the data path)
@@ -50,9 +59,10 @@ first real customer forces durable storage, and the seam should not assume other
           chooseProvider.ts   pure policy: (request, state) -> RoutingDecision
           stats.ts            rolling windows that produce ProviderState snapshots
         targets/
-          document.ts         the target document: parse, validate, version, store
+          document.ts         the target document: parse, validate, version
+          store.ts            the target store: durable read/CAS-write, boot load, polling
           feasibility.ts      declaration-time check against the capability catalogue
-          unmet.ts            the two-window state machine over observed dimensions
+          unmet.ts            the two-window state machine over merged window summaries
         management/
           api.ts              GET/PUT /v1/targets, GET /v1/workloads/{name}/status
           notify.ts           signed, at-least-once unmet-transition notification
@@ -68,7 +78,9 @@ Dependency direction is one-way: `server.ts` and `management/` import routing, t
 and providers; nothing under `routing/`, `targets/`, or `providers/` imports `server.ts`,
 `management/`, `node:http`, or any framework type. That rule is what the Decision Log's
 "portable data path" claim rests on, and it is the first thing a reviewer should check in
-every gateway PR.
+every gateway PR. `targets/store.ts` is the one deliberate concession: it performs I/O
+against `node:sqlite`. It is confined to that module precisely so the rest of `targets/`
+stays pure, and so a Rust or Go data plane replaces one file rather than a package.
 
 `management/` is deliberately a sibling of `server.ts` rather than part of it: the
 management surfaces are control-plane, serve no customer model traffic, and must be able
@@ -202,7 +214,8 @@ rather than solved here.
 
 `targets/unmet.ts` holds the two-window state machine, entering `unmet` after two
 consecutive missed windows and leaving after two consecutive held windows, symmetric by
-design so notifications cannot flap.
+design so notifications cannot flap. It evaluates over *merged* window summaries and
+persists its state, both of which are specified in the next section.
 
 `management/api.ts` serves the document and the per-workload status resource, which is the
 **authoritative** record of current state. `management/notify.ts` posts unmet transitions
@@ -212,12 +225,90 @@ customer's notification endpoint is often down for the same reason their target 
 and a notification queue that grows without bound during an incident is a worse failure
 than a missed notification.
 
+## Durability and the target store (proposed)
+
+Resolved by [#13](https://github.com/hoomji/henry-ai-router/issues/13); the concurrency
+choice and its trade-off are recorded in ADR
+[`0002`](../adr/0002-durable-target-store-with-cross-process-concurrency.md). The **target
+store** is SQLite in WAL mode via Node's built-in `node:sqlite` — one file, three tables,
+zero runtime dependencies. It requires Node 24 or newer, which raises the engines floor
+from the 20 recorded in the ExecPlan's Decision Log.
+
+Behavior 1 produces three pieces of state, and they get three different answers rather
+than one store-everything default:
+
+| State | Durability | Why |
+|---|---|---|
+| Target document | Committed before ack: `PUT /v1/targets` returns `200` only once the write is durable | Customer-authored and unrecoverable if lost. A version the customer has seen but the store has not committed makes "single source of truth" untrue. Writes are rare, human-driven, and off the data path, so the latency is affordable. |
+| Measurement windows | Not durable. In-memory, rebuilt from traffic; a per-window *summary* is persisted at each window close, best-effort | Raw samples are derived and cheap to rebuild, and persisting a hot rolling window would put the store on the request path. Summaries exist only so several processes can be merged. |
+| `unmet` state and its two-window counters | Persisted at window close, best-effort, tolerating loss of at most the last window | Customer-visible state reported on three surfaces. Nothing acks it, so committed-before-ack buys nothing; losing one window delays an entry by roughly five minutes and never produces a wrong state. |
+| Notification signing secret | Not in the store at all — it stays in the config surface | A credential with a different lifecycle. In the store, every backup, dump, and document read path becomes a secret-handling path. |
+
+**Restart.** The state machine survives; the samples do not. `unmet` and its counters are
+restored at boot, so a deploy no longer resets a customer's target state. Two consequences
+follow and are customer-visible. First, a workload can be `unmet` *and*
+`insufficient_data` at the same time until its window refills — coherent, because "no mix
+*has* held the target" is a claim about the past while "we cannot measure it right now" is
+a claim about the present, but the status resource must be able to represent both.
+Second, counters older than about two windows of wall-clock downtime are discarded while
+the `unmet` flag itself is kept: a half-finished count from three days ago measures
+nothing and must not combine with one fresh window to force an entry, whereas silently
+clearing the flag while nobody was watching is the harm this decision exists to remove.
+Leaving `unmet` always happens the specified way — two consecutive held windows.
+
+**Concurrency.** Several gateway processes on one host may write. Optimistic concurrency
+is enforced by the store's transactional compare-and-set rather than by a single-writer
+assumption, which serves both the `409` on the document and notification de-duplication
+with one primitive. `409` is terminal: the gateway never retries a rejected write for the
+client, and `PUT` is a whole-document replace, so there is no retry loop in our contract
+for two management clients to livelock in. Field-level merge across workloads would let a
+dashboard edit and a configuration deploy both succeed, but merge semantics over a
+document with cross-workload validation is a design of its own and is not taken here.
+
+**Windows under several processes.** Each process keeps its own rolling window in memory
+and writes a summary at window close, tagged with a process identifier and the
+window-close timestamp. `targets/unmet.ts` evaluates over the merged summaries whose close
+falls in the current window and prunes older rows as it goes, so a crashed or scaled-down
+process's contribution ages out within one window with no liveness detection, heartbeat,
+or leader election. Two rules follow that a reader will otherwise get wrong: the sample
+floor is workload-wide across merged summaries rather than per-process, and while a
+process is down the merged count can fall below that floor and report `insufficient_data`
+— correct behavior that looks like a regression if the merge rule is not known.
+
+**Notifications.** The `unmet` transition is itself a compare-and-set; the process that
+wins it sends the notification and the others observe the version move and stay silent, so
+N processes produce one notification. Retries do not survive a restart — the status
+resource is authoritative, and a persisted retry queue would reintroduce the
+unbounded-queue-during-an-incident failure this design already rejected. A transition
+first *discovered* after a restart notifies normally: it is a real transition, and
+suppressing it would let a deploy swallow an `unmet` entry.
+
+**Reads on the data path.** The store is never read synchronously while serving a request.
+`server.ts` routes on an in-memory copy loaded at boot and refreshed by polling the
+document version on a short interval (proposed 5 seconds), swapping the copy when it
+moves. A store outage therefore degrades only the control plane — writes fail, status may
+go stale — and cannot touch forwarding. This is the same argument that makes `management/`
+a sibling of `server.ts`, extended to the store. The consequence to state plainly: a
+target change takes effect within about five seconds, and `PUT` returning `200` means
+*committed*, not *in force in every process*.
+
+**Boot with an unreadable or corrupt store.** The process starts anyway: it serves the
+data path as pure passthrough to `UPSTREAM_BASE_URL`, fails management reads and writes
+with `503`, and reports the condition loudly. It never synthesizes an empty document,
+because an empty document is indistinguishable from a customer who has stated no targets —
+a corruption would then look like deliberate configuration and the customer would never
+learn their targets had stopped being applied. Refusing to boot was considered and
+rejected: a corrupt control-plane file must not stop customer traffic from reaching a
+provider, which is the fail-open boundary applied to our own startup.
+
 ## Config surface (proposed)
 
 M1: exactly two environment variables, `UPSTREAM_BASE_URL` and `FORCE_ROUTER_ERROR`.
 M2 adds a JSON config file (path via `GATEWAY_CONFIG`) declaring providers
-(`{ id, baseUrl, adapter }`), their capability floors, and the notification endpoint and
-secret. `config.ts` is the only module that reads the environment; everything else
+(`{ id, baseUrl, adapter }`), their capability floors, the notification endpoint and
+secret, and the target store's file path (overridable by `GATEWAY_STORE_PATH`, following
+the same environment-overrides-file rule, so M1 keeps exactly its two variables).
+`config.ts` is the only module that reads the environment; everything else
 receives parsed config as arguments, so config growth never leaks into routing or
 adapters. Environment variables always override file values, keeping the tracer's
 two-variable setup working forever.
@@ -225,8 +316,8 @@ two-variable setup working forever.
 Targets are deliberately **not** part of this config surface. They live in the target
 document behind `PUT /v1/targets`, because #6 made that document the single source of
 truth with optimistic concurrency — putting targets in a process-level config file too
-would create exactly the second writer that versioning exists to prevent. M2 may back the
-document with an in-memory store; the seam is the same either way.
+would create exactly the second writer that versioning exists to prevent. The config file
+says where the store lives; it never says what the targets are.
 
 ## Alternatives considered
 
@@ -248,12 +339,19 @@ document with an in-memory store; the seam is the same either way.
 ## Failure modes and operational notes
 
 Stub-upstream death mid-run surfaces as upstream errors passed through unchanged (the
-gateway does not synthesize responses). Stats windows are in-memory and reset on restart —
-named here so nobody mistakes it for durability. A restart therefore drops every workload
-below its sample floor into `insufficient_data` and clears any `unmet` state, which is a
-real behavior change after #6, not just a metrics gap: a customer's target state silently
-resets on deploy. Acceptable in M2 against simulated providers; it must not survive to a
-real customer.
+gateway does not synthesize responses). Stats windows are in-memory and reset on restart,
+so a restart drops every workload below its sample floor into `insufficient_data` until
+the window refills. That is now only a measurement gap, not a state loss: per #13 the
+`unmet` state and its counters are persisted and restored at boot, so a customer's target
+state no longer resets on deploy. A workload is therefore `unmet` and `insufficient_data`
+simultaneously for the first window after a restart — see *Durability and the target
+store* for why that combination is correct rather than contradictory.
+
+A store outage cannot affect forwarding, because the data path reads an in-memory copy and
+never the store; a corrupt store at boot yields passthrough forwarding with a failing
+management surface rather than a refusal to start. The remaining exposure is
+control-plane: during a store outage a customer cannot change a target, and the status
+resource may be up to one window stale.
 
 Security: the tracer binds localhost and holds no credentials. M2 introduces the first
 secret — the per-customer notification signing key — which lives in config, is never
@@ -267,6 +365,14 @@ above; `routing/`, `targets/`, and `providers/` contain no imports of `server.ts
 `management/`, or `node:http`; `chooseProvider` returns a decision carrying a binding
 reason; and the M1/M2 transcripts in the ExecPlan exist. When that check is run, record
 the date and move State to `Verified`.
+
+Revision note: 2026-08-15 — resolved
+[#13](https://github.com/hoomji/henry-ai-router/issues/13) (durability). Added *Durability
+and the target store*; persistence left the non-goal list entirely and deployment topology
+became a partial exception; `targets/store.ts` joined the layout; the config surface
+gained the store path; the failure-modes note that in-memory windows "must not survive to
+a real customer" was replaced by the decision itself. The concurrency choice is recorded
+in ADR [`0002`](../adr/0002-durable-target-store-with-cross-process-concurrency.md).
 
 Revision note: 2026-08-15 — reconciled with
 [#6](https://github.com/hoomji/henry-ai-router/issues/6), which specified behavior 1 in
