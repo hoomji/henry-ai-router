@@ -26,7 +26,7 @@ A customer can state what they need from their AI traffic (reliability and cost 
 and the gateway absorbs provider risk on their behalf: it anticipates provider strain,
 intervenes only when needed, keeps behavior consistent across models, and stops them
 paying their provider for reserved capacity nobody is using. The observable difference is
-fewer provider-caused incidents reaching the customer, and a bill that tracks risk
+fewer provider-caused failures reaching the customer, and a bill that tracks risk
 absorbed rather than middleman presence.
 
 ## Required behavior
@@ -39,12 +39,13 @@ must do if built.
    the gateway continuously adjusts the provider mix to hold that outcome proactively
    rather than reacting after a breach. This behavior is specified in full in
    [Target-state routing in detail](#target-state-routing-in-detail) below.
-2. **Incident-only interception.** The gateway is absent from the request path in normal
-   operation and takes the data path only while a declared incident is in progress
-   (rate-limit storm, provider outage, model deprecation). Both edges of that window are
-   auditable. Interception carries **no incremental charge**: what the customer pays does
-   not depend on whether an incident was declared (see
-   [Pricing model](#pricing-model)).
+2. **Strain-triggered interception.** The gateway is absent from the request path in
+   normal operation and takes the data path only while an *interception window* is open,
+   opened by evidence of *provider strain*. Both edges of that window are auditable.
+   Interception carries **no incremental charge**: what the customer pays does not depend
+   on whether a window was opened (see [Pricing model](#pricing-model)). This behavior is
+   specified in full in [Strain-triggered interception in
+   detail](#strain-triggered-interception-in-detail) below.
 3. **Collective fatigue-aware routing.** The gateway shares anonymized provider-strain
    signals (rate-limit pressure, error rates) across its whole customer base, so routing
    shifts away from a strained provider before any individual customer receives a 429.
@@ -222,6 +223,113 @@ instead. Customers who declare no priority and no hard dimension still get deter
 explainable behavior from the defaults above rather than gateway discretion — the point
 of this behavior is that the gateway's choices are predictable without a routing rule.
 
+## Strain-triggered interception in detail
+
+This section specifies required behavior 2. Terms in *italics* on first use are defined in
+[`CONTEXT.md`](../../CONTEXT.md).
+
+### What interception is for
+
+In normal operation the customer's client calls the provider directly and the gateway
+influences routing only by pushing a base-URL directive the client acknowledges
+([#4](https://github.com/hoomji/henry-ai-router/issues/4)). A directive can move all of a
+workload's traffic from one provider to another; it cannot decide anything per request.
+
+Interception exists for the one thing a directive cannot do: **fail an individual
+in-flight request over to another provider**. The client cannot do this itself without
+holding every provider's credentials, and that is the install burden this product refuses.
+Prompt translation (behavior 5) rides on the same moment, because a cross-model failover is
+where a prompt written for one model meets another.
+
+It follows that interception is for **partial** failure — a rate-limit storm or an elevated
+error rate, where most requests succeed and each one needs its own decision. Two conditions
+that sound like they belong here do not, and are named to make the narrowed trigger set
+legible rather than to imply an omission:
+
+- A provider that is **fully unavailable** needs a directive, not the data path. Every
+  request would fail over, so moving the whole workload is both sufficient and cheaper.
+- A **model deprecation** is known in advance and is a scheduled directive. The gateway
+  does not detect deprecation by watching errors, and no window opens for one.
+
+### What declares a window's start
+
+Detection reads *provider strain*: rate-limit and error pressure aggregated across the
+customer base, keyed to `(provider, model, region)`.
+
+- Thresholds are stated as **banded deviation from that provider's own trailing 24-hour
+  baseline**, never as absolute rates. A normal 429 rate differs by model, tier, and
+  region, so a single absolute number is wrong nearly everywhere.
+- **429s attributable to a customer's own quota are not strain.** A request throttled
+  because that customer exhausted an org-scoped limit says nothing about the provider, and
+  counting it would let the single noisiest tenant open windows for everybody. Such
+  responses are distinguished by their limit and reset headers and excluded from strain
+  evidence. They remain actionable for the customer they belong to, as their own condition.
+- The strain signals published across the customer base are bucketed, banded, and delayed
+  by the aggregation contract in
+  [#5](https://github.com/hoomji/henry-ai-router/issues/5). **That contract governs
+  disclosure, not detection.** Detection runs against the internal aggregate at fine
+  granularity, because a detector reading the published feed would declare minutes after
+  onset and forfeit the sub-second insertion the mechanism exists to provide. Recorded in
+  [ADR 0005](../adr/0005-strain-evidence-detection-internal.md).
+
+A window may open on cohort evidence alone, before the customer's own traffic has shown
+anything — this is behavior 3's promise, and waiting for their first 429 would restore
+exactly the reactive posture this product replaces. The window then carries an **evidence
+class** of `anticipatory` rather than `observed`, and an anticipatory window may open only
+on corroboration across **at least two signal types or two disjoint cohorts**, so no single
+source can produce one.
+
+Windows open **automatically**. An operator may force-clear or suppress one, and may never
+open one; every such override is recorded with its actor. A human in the opening path would
+spend the entire insertion-latency budget, and [ADR
+0004](../adr/0004-incidents-included-not-surcharged.md) has already removed the incentive
+that would make automatic opening untrustworthy — no charge depends on a declaration.
+
+### What ends one, and why the edges are asymmetric
+
+Entry is fast and exit is slow, deliberately, and this is **not** the symmetric rule
+`unmet` uses. The two-window symmetry there protects a *report*, where flapping gets the
+alert muted. A window is an *action*: it is free, reversible, and its costs point one way —
+opening late costs the customer failed requests, closing late costs only gateway compute.
+So a window opens on a single corroborated interval and closes only on sustained recovery.
+
+Recovery is proved by **canary traffic through the gateway**: a fraction of real requests
+attempt the strained provider first and fail over on error. Synthetic probes on a
+gateway-held key measure the wrong account, since rate limits are scoped per organization,
+and releasing traffic direct to test would make the customer pay for the experiment with
+unprotected requests during a window opened to protect them. A consequence to accept: the
+tail of every window is mixed, so **interception is a per-request property, not a
+per-window one**, and neither the audit record nor this specification may describe a window
+as an interval in which everything was intercepted.
+
+### What the customer can audit
+
+The window's edges are the **acknowledged** ones. The gateway declares, the client
+acknowledges, and traffic between those two moments went direct — so the acknowledged edge,
+not the declaration, bounds which traffic was actually intercepted. Both are recorded: a
+persistently wide gap means a client running on the polling fallback rather than a pushed
+directive, which is a degradation the customer is otherwise never told about.
+
+The audit record is held at **window granularity**, and the per-request truth reaches the
+customer as a **response header on every intercepted request**, following the precedent
+behavior 1 already sets for `unmet`. The header is mandatory, not optional: written at
+request time into logs the gateway does not control, it is the one part of this record the
+customer holds independently of us — which matters, because our own account of what we did
+during a window is otherwise unfalsifiable by them.
+
+Every window carries a **binding reason**, on the same standard behavior 1 sets for routing
+decisions: a window that cannot state why it opened must not open. Disclosure is capped at
+what the aggregation contract permits publishing — the evidence class, which signal types
+corroborated, the banded deviation, and the providers involved. **Cohort size and
+composition are never disclosed**, because that is precisely the inference one customer
+must not be able to make about another. An `anticipatory` window therefore discloses less
+than an `observed` one, whose evidence is the customer's own traffic. That difference is
+stated to the customer rather than smoothed over.
+
+Window records are **append-only**: a correction is appended and never rewrites what was
+recorded, and records are retained for at least thirteen months, so any renewal
+conversation can reach the whole prior term.
+
 ## Pricing model
 
 This section resolves whether behaviors 2 and 4 can coexist as business models
@@ -254,14 +362,22 @@ Token counts are reported by the customer's own client. That is accepted rather 
 audited: the code that reports usage is the code that receives the routing benefit, so
 under-reporting degrades the customer's own provider mix.
 
-### What an incident costs
+### What interception costs
 
-Nothing beyond the subscription. The gateway declares the incident window
+Nothing beyond the subscription. The gateway opens the *interception window*
 ([#9](https://github.com/hoomji/henry-ai-router/issues/9)), and a gateway paid by its own
-declarations cannot be trusted to make them honestly. Incident cost is priced into the
+declarations cannot be trusted to make them honestly. Interception cost is priced into the
 tier, not recovered from it; margin is therefore worst in the month a provider degrades
 badly, which is accepted. Recorded in
 [ADR 0004](../adr/0004-incidents-included-not-surcharged.md).
+
+The one place detection touches money runs the opposite way. When *provider strain* is
+present and the gateway fails to push a directive the client acknowledges — the control
+plane is down, or the client is stuck on the polling fallback — the customer keeps hitting
+a degrading provider. That period counts against **control-plane availability** and
+produces the same unprompted credit as any other control-plane failure. The gateway
+therefore loses money by failing to open a window and gains nothing by opening one, which
+is the exact inverse of the surcharge ADR 0004 rejected.
 
 ### What a bypassed customer owes
 
@@ -279,7 +395,7 @@ Bypass is free, in both of its forms, and this is deliberate.
   mechanism exists to make it costly. Any such mechanism would make the gateway the
   always-on middleman the non-goals forbid. Retention rests on the client degrading to a
   static base URL without a live control plane — no mix, no feasibility check, no strain
-  signal, no incident escalation. If that is not enough, the product is wrong, and that is
+  signal, no interception. If that is not enough, the product is wrong, and that is
   to be learned from churn rather than prevented by lock-in.
 
 ### Reservations
@@ -334,9 +450,20 @@ express. Reconciling that is
   present.
 - Cross-customer strain signals (behavior 3) must be anonymized and aggregated; one
   customer's traffic pattern must not be inferable by another.
-- Incident detection (behavior 2) must declare incident start and end explicitly so
-  customers can audit exactly which traffic was intercepted. The window is an audit
-  boundary, not a billing boundary: no charge depends on it.
+- An *interception window* (behavior 2) must have explicit start and end so customers can
+  audit exactly which traffic was intercepted. Its edges are the ones the client
+  acknowledged, and the per-request tag on an intercepted response is the finest-grained
+  record; a window is never described as an interval in which all traffic was intercepted,
+  because its tail carries canary requests. The window is an audit boundary, not a billing
+  boundary: no charge depends on it.
+- A window whose record cannot be written is still opened — customer availability outranks
+  the gateway's own bookkeeping — and the gap is disclosed as an unrecorded window. A
+  period the gateway cannot account for and a period in which nothing happened must not
+  look alike.
+- An *interception window* opened on cohort evidence alone must be distinguishable from
+  one opened on the customer's own traffic, and neither may disclose cohort size or
+  composition. A window that cannot state its binding reason within those limits must not
+  open.
 - A control-plane outage is not observable to the customer, because their traffic
   continues to the last-directed provider. The gateway must therefore measure its own
   control-plane availability and issue the resulting credit unprompted; a customer is
@@ -388,11 +515,18 @@ express. Reconciling that is
       each rejected candidate (behavior 1, `unmet`).
 - [ ] When ceilings conflict, the lowest-priority ceiling yields and is reported; a
       dimension marked hard fails the request instead of being breached (behavior 1).
-- [ ] Traffic outside a declared incident window reaches the provider without gateway
-      interception; traffic inside one is intercepted, and both window edges are visible
-      to the customer (behavior 2).
-- [ ] Two customers with identical traffic and different incident histories receive
-      identical invoices; no invoice line varies with whether an incident was declared
+- [ ] Traffic outside an interception window reaches the provider without gateway
+      interception; every intercepted request carries a tag identifying its window, and
+      the window's acknowledged edges and its declaration times are both visible to the
+      customer (behavior 2).
+- [ ] A window opened on cohort evidence before the customer's own traffic degraded is
+      reported as `anticipatory`, names the signal types that corroborated it and the
+      banded deviation, and discloses no cohort size or composition (behavior 2).
+- [ ] Provider strain that the gateway fails to act on — no directive pushed and
+      acknowledged — produces a control-plane availability credit the customer did not
+      have to ask for (behavior 2, pricing model).
+- [ ] Two customers with identical traffic and different interception histories receive
+      identical invoices; no invoice line varies with whether a window was opened
       (behavior 2, pricing model).
 - [ ] A period in which the gateway could not serve the status resource or push a routing
       directive produces a credit the customer did not have to ask for (pricing model).

@@ -43,6 +43,9 @@ ADRs live at `docs/adr/NNNN-short-slug.md`.
 - [`0004`](docs/adr/0004-incidents-included-not-surcharged.md) — incidents are included in
   the subscription, not surcharged, because the gateway declares the incident window and
   must not be paid by its own declarations.
+- [`0005`](docs/adr/0005-strain-evidence-detection-internal.md) — strain detection reads
+  the internal aggregate while disclosure stays banded, which splits *provider strain*
+  from the *interception window* and retires the word *incident* used by `0004`.
 
 ## Domain language
 

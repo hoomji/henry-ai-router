@@ -13,7 +13,7 @@
 ## Problem context
 
 The product spec requires a gateway whose defining promise is provider risk management:
-fail-open forwarding, target-state routing, and later incident-only interception,
+fail-open forwarding, target-state routing, and later strain-triggered interception,
 cross-customer strain signals, and prompt translation. The ExecPlan's Decision Log fixes
 the platform: TypeScript on Node.js 24+, inside this repository, with the request data
 path kept thin enough to reimplement in Rust or Go later without rewriting routing policy
@@ -117,7 +117,7 @@ noted now so nobody designs adapters around whole-body assumptions.
 
 - Pure and synchronous: no clock reads, no network, no global state. Everything it may
   consider — rolling p95 per provider, observed cost and success rate, the workload's
-  `Target`, incident flags later — arrives inside the `ProviderState` snapshot.
+  `Target`, interception-window flags later — arrives inside the `ProviderState` snapshot.
 - Snapshots are produced by `routing/stats.ts`, which the data path feeds with
   (provider, latency, cost, outcome) observations after each request completes. Stats
   collection is the only stateful part of routing, and it is write-only from the data

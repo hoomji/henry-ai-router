@@ -121,6 +121,41 @@ floor correction a comparison rather than a reconstruction. Never part of the ta
 document, which holds only what the customer authored.
 _Avoid_: Audit log, snapshot, history, metadata
 
+### Interception
+
+**Provider strain**:
+Evidence that a provider is degrading, aggregated across the customer base and keyed to
+`(provider, model, region)`. Global and never customer-specific; an input to declaring an
+*interception window*, never an event a customer is told about.
+_Avoid_: Incident, outage, provider health, degradation event
+
+**Interception window**:
+The span during which a customer's workload has its requests served through the gateway
+rather than sent direct, so each request can fail over individually. Keyed per customer and
+workload, opened by *provider strain*, and the unit the customer audits. Distinct from
+strain, which is the evidence: the same strain opens a window for one customer and not
+another.
+_Avoid_: Incident, incident window, outage window, failover mode
+
+**Evidence class**:
+Whether an *interception window* opened on the customer's own observed traffic
+(`observed`) or on cohort evidence before their traffic showed anything (`anticipatory`).
+Carried on the window, because the two differ in how much of their basis can be disclosed.
+_Avoid_: Trigger type, detection source, confidence
+
+**Acknowledged edge**:
+The moment a client confirms the routing directive that opens or closes an *interception
+window* — the edge that bounds which traffic was actually intercepted. Distinct from the
+declaration, which is when the gateway decided; traffic between the two went direct.
+_Avoid_: Incident start, cutover, switch time
+
+**Incident**:
+Retired. Named *provider strain* and an *interception window* at once — evidence and
+action — and so could not be declared, scoped, or audited without ambiguity. Retained here
+because [ADR 0004](docs/adr/0004-incidents-included-not-surcharged.md) is written in the
+older vocabulary; there, "the incident window" means the *interception window*.
+_Avoid_: Use *provider strain* or *interception window*
+
 ### Commerce
 
 **Spend under management**:
