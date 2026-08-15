@@ -6,7 +6,8 @@ private conversations, or human memory. Capture and retire entries with
 
 | Reference | Source | Version or retrieved | Repository consumers | Owner | Review date |
 |---|---|---|---|---|---|
-| [AI gateway competitive landscape](2026-08-15-ai-gateway-competitive-landscape.md) | Vendor docs/pricing pages (OpenRouter, LiteLLM, Portkey, Martian/Thesean, Unify, Helicone, Cloudflare, Kong, AWS Bedrock; URLs inline) | Retrieved 2026-08-15 | `IDEA.md` ideas 1–4; issues #3, #6, #7, #8 | hoomji | 2026-11-15 |
+| [AI gateway competitive landscape](2026-08-15-ai-gateway-competitive-landscape.md) | Vendor docs/pricing pages (OpenRouter, LiteLLM, Portkey, Martian/Thesean, Unify, Helicone, Cloudflare, Kong, AWS Bedrock; URLs inline) | Retrieved 2026-08-15 | Provider-risk gateway product spec; issues #3, #6, #7, #8 | hoomji | 2026-11-15 |
+| [Incident-only gateway interception mechanisms](2026-08-15-incident-interception-mechanisms.md) | AWS Route 53 docs, OpenAI/Anthropic SDK docs, LaunchDarkly architecture docs, Envoy xDS docs | Retrieved 2026-08-15 | Provider-risk gateway product spec (issues #4, #8) | Henry | 2027-02-15 |
 
 ## Entry contract
 
