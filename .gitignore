@@ -1,0 +1,4 @@
+# Build output and installed packages. The gateway's lockfile is committed; its
+# node_modules and compiled dist are not.
+gateway/node_modules/
+gateway/dist/

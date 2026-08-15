@@ -13,7 +13,7 @@ Verification status vocabulary:
 | Document | Scope | State | Owner | Last verified | Evidence |
 |---|---|---|---|---|---|
 | [Core beliefs](core-beliefs.md) | Agent-first operating principles | Proposed | henry.tran@uniblock.dev | Unverified | None |
-| [Gateway design](gateway-design.md) | Module layout, adapter contract, routing seam, fail-open path, target and management surfaces, config surface for `gateway/` | Proposed | henry.tran@uniblock.dev | Unverified | None (no implementation yet) |
+| [Gateway design](gateway-design.md) | Module layout, adapter contract, routing seam, fail-open path, target and management surfaces, config surface for `gateway/` | Partially verified | henry.tran@uniblock.dev | 2026-08-15 (M1 only) | M1 tree, dependency rule, adapter contract, fail-open transcript |
 
 ## Entry contract
 

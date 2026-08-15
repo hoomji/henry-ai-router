@@ -1,12 +1,20 @@
 # Agent guidance
 
-This repository is a product-exploration repository for an AI router/gateway. It
-currently contains documentation only: there is no application code, no service, and
-nothing to deploy. Treat that as the current state, not as a gap to fill silently.
+This repository is a product-exploration repository for an AI router/gateway. Most of it
+is documentation — the product thinking, its decisions, and the harness that keeps them
+reviewable. It also contains one runtime: the gateway tracer under [`gateway/`](gateway/),
+the M1 milestone of the tracer ExecPlan. Nothing is deployed anywhere.
+
+The runtime is deliberately small. Read
+[`docs/exec-plans/active/2026-08-14-provider-risk-gateway-tracer.md`](docs/exec-plans/active/2026-08-14-provider-risk-gateway-tracer.md)
+before extending it: what `gateway/` is *for* — and what M1 is not — is stated there, not
+inferable from the code.
 
 ## Repository map
 
 - Architecture and boundaries: [`ARCHITECTURE.md`](ARCHITECTURE.md)
+- Gateway runtime: [`gateway/`](gateway/) — layout and seam rules in
+  [`docs/design-docs/gateway-design.md`](docs/design-docs/gateway-design.md)
 - Decisions: [`docs/adr/`](docs/adr/), numbered `NNNN-short-slug.md`
 - Domain language: [`CONTEXT.md`](CONTEXT.md) — glossary only, no behavior or decisions
 - Harness capability state: [`docs/harness/manifest.yaml`](docs/harness/manifest.yaml)
@@ -34,10 +42,21 @@ Run these from the repository root. `python` is the interpreter name that resolv
 maintainer's machine; `python3` does not.
 
 - Setup: `python scripts/setup.py`
-- Start: `unknown` — there is no startable runtime in this repository
 - Focused check: `python scripts/harness-validate.py .`
 - Full verification: `python scripts/check.py`
 - Harness validation: `python scripts/harness-validate.py .`
+
+The gateway runtime has its own commands. `npm --prefix gateway install` is its setup, and
+`build` must run before `start` or `stub` because the tracer runs compiled JavaScript.
+
+- Install: `npm --prefix gateway install`
+- Build: `npm --prefix gateway run build`
+- Start: `npm --prefix gateway run start` — requires `UPSTREAM_BASE_URL`; `PORT` defaults
+  to 8080, and `FORCE_ROUTER_ERROR=1` makes the routing seam throw so the fail-open path
+  is observable
+- Stub upstream: `npm --prefix gateway run stub` — a canned-completion provider on
+  `STUB_PORT` (default 8081), so the tracer runs with no provider credentials
+- Test: `npm --prefix gateway test`
 
 ## Working agreement
 

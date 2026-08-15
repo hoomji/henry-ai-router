@@ -24,7 +24,11 @@ below; no milestone is spent deciding them.
 
 ## Progress
 
-- [ ] Scaffold the runnable gateway with a fail-open pass-through proxy (M1).
+- [x] Scaffold the runnable gateway with a fail-open pass-through proxy (M1).
+      2026-08-15 — Done and verified. `gateway/` exists with the three seams separate,
+      `npm --prefix gateway test` passes 9 tests, and the curl transcript in *Artifacts and
+      Notes* shows both the normal response and the fail-open header. `AGENTS.md`,
+      `ARCHITECTURE.md`, and `docs/harness/manifest.yaml` no longer deny a runtime exists.
 - [ ] Implement target-state routing against simulated providers, decision surface and
       HTTP surfaces both (M2).
 
@@ -143,6 +147,15 @@ None yet.
   This changes the signature recorded under "Interfaces and Dependencies" below.
   Date/Author: 2026-08-15 / Claude (planning), per #6
 
+- Decision: The gateway carries one development dependency beyond `typescript` —
+  `@types/node` — and still zero runtime dependencies.
+  Rationale: `node:http` and the global `fetch` do not typecheck without it, so the
+  alternative was to weaken `strict` or hand-write ambient declarations for the standard
+  library. The constraint this plan actually protects is the *runtime* dependency count,
+  which is unchanged: nothing is installed on the path a request travels. Recorded here
+  rather than waved through because the plan asked for any dependency to be argued.
+  Date/Author: 2026-08-15 / Claude (M1 implementation)
+
 ## Outcomes & Retrospective
 
 Not started.
@@ -157,9 +170,11 @@ are:
   full gate `python scripts/check.py`. The interpreter is `python` (not `python3`) on the
   maintainer's machine. These Python scripts are the *harness* — they validate
   documentation — and are unrelated to the gateway's own language; they stay in Python.
-- `ARCHITECTURE.md` — states that this repository owns product *thinking* and that adding
-  an implementation is an architectural change requiring an ADR at
-  `docs/adr/NNNN-short-slug.md`. No ADRs exist yet;
+- `ARCHITECTURE.md` — the component map and the dependency rules between them, including
+  the seam rule inside `gateway/` that this plan's Decision Log depends on. ADRs live at
+  `docs/adr/NNNN-short-slug.md` and record product and design decisions; where the
+  implementation lives and what language it is written in are recorded in this plan's
+  Decision Log instead;
 - `docs/product-specs/provider-risk-management-gateway.md` — the product specification
   this plan implements toward. Its acceptance criteria include a fail-open boundary
   ("with the gateway down, customer traffic still reaches the configured provider") and
@@ -444,7 +459,7 @@ error flag, and (3) M2's load script demonstrating a target-driven traffic split
 five named verification artifacts covering `infeasible_by_declaration`, the `409` on a
 stale write, `unmet` entry and its two-window exit, `unmet` surviving an unreachable
 notification endpoint, and per-workload routing. Automated proof: `python scripts/check.py`
-passes, plus the gateway's own test command introduced in M1 (recorded here when created).
+passes, plus the gateway's own test command introduced in M1: `npm --prefix gateway test`.
 This evidence maps directly to the spec's four behavior-1 acceptance criteria and the
 fail-open boundary; the spec's remaining criteria stay open and unclaimed.
 
@@ -457,7 +472,34 @@ plan.
 
 ## Artifacts and Notes
 
-None yet; add M1's curl transcripts and M2's load-script output here as they are produced.
+**M1 verification transcript — 2026-08-15, Node v24.18.0, npm 11.16.0.** Stub upstream on
+8081; gateway on 8080; a second gateway on 8082 with `FORCE_ROUTER_ERROR=1`, so both paths
+are observable without restarting anything.
+
+    $ curl -s -D - -X POST http://localhost:8080/v1/chat/completions -d '{"model":"any","messages":[]}'
+    HTTP/1.1 200 OK
+    content-type: application/json
+    x-stub-upstream: true
+
+    {"id":"chatcmpl-stub","object":"chat.completion","model":"stub-model","choices":[...],
+     "usage":{"prompt_tokens":0,"completion_tokens":4,"total_tokens":4}}
+
+    $ curl -s -D - -X POST http://localhost:8082/v1/chat/completions -d '{"model":"any","messages":[]}'
+    HTTP/1.1 200 OK
+    content-type: application/json
+    x-stub-upstream: true
+    x-gateway-failopen: true
+
+    {"id":"chatcmpl-stub", ... same canned completion ... }
+
+The second response is the fail-open boundary: routing threw, the request still reached the
+upstream, and the header says so on the response rather than only in a log.
+
+`npm --prefix gateway test` — 9 tests, 9 pass: normal forwarding, fail-open under a thrown
+routing seam, `502` on an unreachable upstream, `404` outside the one endpoint, the routing
+seam's decision and its refusal to invent a fallback, and three configuration cases.
+
+M2's load-script output belongs here when produced.
 
 ## Interfaces and Dependencies
 

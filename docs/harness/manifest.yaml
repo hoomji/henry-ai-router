@@ -16,7 +16,7 @@ knowledge_store:
   references: "docs/references/index.md"
 commands:
   setup: "python scripts/setup.py"
-  start: "unknown"
+  start: "npm --prefix gateway run start"
   check: "python scripts/harness-validate.py ."
   test: "python scripts/check.py"
   validate: "python scripts/harness-validate.py ."
@@ -27,9 +27,12 @@ capabilities:
       - "command: python scripts/setup.py"
       - "scripts/setup.py"
   startable_runtime:
-    status: "missing"
+    status: "verified"
     evidence:
-      - "ARCHITECTURE.md"
+      - "command: npm --prefix gateway run start"
+      - "command: npm --prefix gateway run stub"
+      - "gateway/src/server.ts"
+      - "docs/exec-plans/active/2026-08-14-provider-risk-gateway-tracer.md"
   harness_contract_validation:
     status: "verified"
     evidence:
@@ -39,9 +42,10 @@ capabilities:
     evidence:
       - "command: python scripts/check.py"
   automated_tests:
-    status: "missing"
+    status: "verified"
     evidence:
-      - "ARCHITECTURE.md"
+      - "command: npm --prefix gateway test"
+      - "gateway/test/failOpen.test.ts"
   continuous_integration:
     status: "missing"
     evidence:
