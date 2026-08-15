@@ -8,9 +8,9 @@ reasoning reviewable — and, since M1 of the tracer ExecPlan, the implementatio
 thinking is for.
 
 That implementation is the gateway under `gateway/`: an HTTP service in TypeScript on
-Node.js 24, with zero runtime dependencies, recorded in
-[`0008`](docs/adr/0008-implementation-lives-in-this-repository.md). It is not deployed
-anywhere and has no deployment target. What it currently does is forward a chat completion
+Node.js 24, with zero runtime dependencies. The choice to put it here, and to write it in
+TypeScript, is recorded in the tracer ExecPlan's Decision Log. It is not deployed anywhere
+and has no deployment target. What it currently does is forward a chat completion
 to one configured upstream and keep doing so when its own routing logic fails; what it is
 *for* is stated in the tracer ExecPlan, not inferable from the code.
 
@@ -73,9 +73,6 @@ ADRs live at `docs/adr/NNNN-short-slug.md`.
 - [`0007`](docs/adr/0007-strain-contribution-is-a-condition-of-service.md) — contributing
   strain evidence is a condition of service, bounded to facts the provider side of the
   connection already observed.
-- [`0008`](docs/adr/0008-implementation-lives-in-this-repository.md) — the gateway
-  implementation lives in this repository under `gateway/`, which retires this document's
-  former "no implementation" boundary.
 
 ## Domain language
 

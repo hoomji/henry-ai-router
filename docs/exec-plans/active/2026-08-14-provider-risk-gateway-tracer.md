@@ -156,14 +156,6 @@ None yet.
   rather than waved through because the plan asked for any dependency to be argued.
   Date/Author: 2026-08-15 / Claude (M1 implementation)
 
-- Decision: Adding the implementation to this repository is recorded as ADR
-  [`0008`](../../adr/0008-implementation-lives-in-this-repository.md), not only as the
-  Decision Log entry above.
-  Rationale: `ARCHITECTURE.md` required an ADR for exactly this change, and a Decision Log
-  entry is scoped to one plan while the repository boundary outlives every plan that
-  crosses it.
-  Date/Author: 2026-08-15 / Claude (M1 implementation)
-
 ## Outcomes & Retrospective
 
 Not started.
@@ -178,9 +170,11 @@ are:
   full gate `python scripts/check.py`. The interpreter is `python` (not `python3`) on the
   maintainer's machine. These Python scripts are the *harness* — they validate
   documentation — and are unrelated to the gateway's own language; they stay in Python.
-- `ARCHITECTURE.md` — states that this repository owns product *thinking* and that adding
-  an implementation is an architectural change requiring an ADR at
-  `docs/adr/NNNN-short-slug.md`. No ADRs exist yet;
+- `ARCHITECTURE.md` — the component map and the dependency rules between them, including
+  the seam rule inside `gateway/` that this plan's Decision Log depends on. ADRs live at
+  `docs/adr/NNNN-short-slug.md` and record product and design decisions; where the
+  implementation lives and what language it is written in are recorded in this plan's
+  Decision Log instead;
 - `docs/product-specs/provider-risk-management-gateway.md` — the product specification
   this plan implements toward. Its acceptance criteria include a fail-open boundary
   ("with the gateway down, customer traffic still reaches the configured provider") and
