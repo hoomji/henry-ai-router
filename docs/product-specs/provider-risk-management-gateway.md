@@ -31,9 +31,9 @@ absorbed rather than middleman presence.
 
 ## Required behavior
 
-The five candidate behaviors below originate from the idea record. Their relative
-priority is an open product decision (see table); the specification records what each
-must do if built.
+The five candidate behaviors below originate from the idea record. The specification
+records what each must do; the order in which they are built, and which are deferred, is
+settled in [Behavior sequence and deferrals](#behavior-sequence-and-deferrals).
 
 1. **Target-state routing.** The customer states an outcome instead of a routing rule;
    the gateway continuously adjusts the provider mix to hold that outcome proactively
@@ -100,6 +100,13 @@ A target consists of:
 Model quality is not a targetable dimension. Scoring model quality would make this
 product a benchmarking service, which the non-goals exclude; `allowed_models` gives the
 customer the control they actually want without that.
+
+Listing several models in `allowed_models` is the customer's assertion that those models
+are **interchangeable for that workload**. The gateway routes freely within the list and
+does not adapt a prompt when it moves a request from one listed model to another; prompt
+translation (behavior 5) exists for cross-model failover during an *interception window*,
+not for ordinary routing inside a blast radius the customer drew. A customer who does not
+want a model's output removes it from the list.
 
 ### How each dimension is measured
 
@@ -194,7 +201,13 @@ Reporting reaches the customer through four surfaces:
    truth. This matters because a customer's notification endpoint is frequently down for
    the same reason their target is unmet.
 4. A response header on requests served while the workload is `unmet`, so a customer can
-   correlate an individual slow request with a known state.
+   correlate an individual slow request with a known state. In normal operation the gateway
+   is not in the request path, so this header is written by the *connector* from the state
+   the gateway pushes it — unlike the interception header of behavior 2, which the gateway
+   writes because during a window it genuinely is in the path. The distinction costs the
+   customer nothing: what made that record worth having is that it lands in logs the
+   customer keeps, not which of the gateway's components authored it. The status resource
+   remains authoritative either way.
 
 There is no third infeasibility state for "the gateway's own capability floor was wrong",
 and that gap is closed deliberately rather than left open. A wrong floor is the one path on
@@ -230,13 +243,13 @@ This section specifies required behavior 2. Terms in *italics* on first use are 
 
 ### What interception is for
 
-In normal operation the customer's client calls the provider directly and the gateway
-influences routing only by pushing a base-URL directive the client acknowledges
+In normal operation the customer's connector calls the provider directly and the gateway
+influences routing only by pushing a base-URL directive the connector acknowledges
 ([#4](https://github.com/hoomji/henry-ai-router/issues/4)). A directive can move all of a
 workload's traffic from one provider to another; it cannot decide anything per request.
 
 Interception exists for the one thing a directive cannot do: **fail an individual
-in-flight request over to another provider**. The client cannot do this itself without
+in-flight request over to another provider**. The connector cannot do this itself without
 holding every provider's credentials, and that is the install burden this product refuses.
 Prompt translation (behavior 5) rides on the same moment, because a cross-model failover is
 where a prompt written for one model meets another.
@@ -304,17 +317,19 @@ as an interval in which everything was intercepted.
 
 ### What the customer can audit
 
-The window's edges are the **acknowledged** ones. The gateway declares, the client
+The window's edges are the **acknowledged** ones. The gateway declares, the connector
 acknowledges, and traffic between those two moments went direct — so the acknowledged edge,
 not the declaration, bounds which traffic was actually intercepted. Both are recorded: a
-persistently wide gap means a client running on the polling fallback rather than a pushed
+persistently wide gap means a connector running on the polling fallback rather than a pushed
 directive, which is a degradation the customer is otherwise never told about.
 
 The audit record is held at **window granularity**, and the per-request truth reaches the
 customer as a **response header on every intercepted request**, following the precedent
-behavior 1 already sets for `unmet`. The header is mandatory, not optional: written at
-request time into logs the gateway does not control, it is the one part of this record the
-customer holds independently of us — which matters, because our own account of what we did
+behavior 1 already sets for `unmet`. This one is written by the gateway itself, which is in
+the request path for the window's duration — behavior 1's equivalent is written by the
+*connector*, because in normal operation the gateway is not. The header is mandatory, not
+optional: written at request time into logs the gateway does not control, it is the one part
+of this record the customer holds independently of us — which matters, because our own account of what we did
 during a window is otherwise unfalsifiable by them.
 
 Every window carries a **binding reason**, on the same standard behavior 1 sets for routing
@@ -346,7 +361,7 @@ do not pay for our presence in your request path; you pay for provider risk abso
 ### What the customer pays
 
 A flat subscription, tiered on **spend under management**: the customer's provider spend
-for traffic the gateway manages, computed from the client's reported token counts against
+for traffic the gateway manages, computed from the connector's reported token counts against
 a published **rate card**. There is no percentage of spend, no per-request markup, and no
 per-incident fee.
 
@@ -358,7 +373,7 @@ backwards when it turns out wrong. A billing rate may do none of those things. T
 card may be derived from the catalogue on a slow cadence, but it changes only forward and
 a floor correction never restates a settled invoice.
 
-Token counts are reported by the customer's own client. That is accepted rather than
+Token counts are reported by the customer's own connector. That is accepted rather than
 audited: the code that reports usage is the code that receives the routing benefit, so
 under-reporting degrades the customer's own provider mix.
 
@@ -372,8 +387,8 @@ badly, which is accepted. Recorded in
 [ADR 0004](../adr/0004-incidents-included-not-surcharged.md).
 
 The one place detection touches money runs the opposite way. When *provider strain* is
-present and the gateway fails to push a directive the client acknowledges — the control
-plane is down, or the client is stuck on the polling fallback — the customer keeps hitting
+present and the gateway fails to push a directive the connector acknowledges — the control
+plane is down, or the connector is stuck on the polling fallback — the customer keeps hitting
 a degrading provider. That period counts against **control-plane availability** and
 produces the same unprompted credit as any other control-plane failure. The gateway
 therefore loses money by failing to open a window and gains nothing by opening one, which
@@ -385,15 +400,15 @@ Bypass is free, in both of its forms, and this is deliberate.
 
 - **Involuntary** (the gateway is unavailable, fail-open fires): the customer is owed a
   credit against **control-plane availability** — whether the gateway can serve the status
-  resource and push a routing directive a client acknowledges. Never against request
+  resource and push a routing directive a connector acknowledges. Never against request
   success, which belongs to the provider and which fail-open exists to preserve. Because
   the gateway is out of the path, a control-plane outage is not observable to the
   customer: their traffic continues to the last-directed provider. The credit is therefore
   **self-issued from the gateway's own measurement**. A credit only the vendor can detect
   is either a written commitment or nothing at all.
-- **Voluntary** (the customer removes the client and stops paying): permitted, and no
+- **Voluntary** (the customer removes the connector and stops paying): permitted, and no
   mechanism exists to make it costly. Any such mechanism would make the gateway the
-  always-on middleman the non-goals forbid. Retention rests on the client degrading to a
+  always-on middleman the non-goals forbid. Retention rests on the connector degrading to a
   static base URL without a live control plane — no mix, no feasibility check, no strain
   signal, no interception. If that is not enough, the product is wrong, and that is
   to be learned from churn rather than prevented by lock-in.
@@ -405,25 +420,118 @@ or resells provider capacity: if the gateway held the reservation, bypassing the
 would forfeit capacity the customer paid for, which inverts the promise above and would
 make this a capacity-broker business carrying provider commitments on its own books.
 
-The customer declares each reservation (host, model, size, term, effective rate).
-Utilization is computed from the client's own telemetry rather than from the provider,
+The customer declares each reservation (host, model, size, term, effective rate) in its own
+resource, **not** in the *target document*: a target states an outcome the customer wants,
+a reservation states a fact about their contract with a provider, and holding both in one
+versioned document would let a term expiring change what a target means without the customer
+writing anything. Utilization is computed from the connector's own telemetry rather than from
+the provider,
 because the authoritative provider signals do not serve routing: Azure publishes
 `Provisioned-managed Utilization V2` but Azure Monitor lags 30 seconds to 15 minutes,
 against a 5-minute measurement window, and Bedrock publishes no utilization figure at all.
 A read-only cloud credential may be offered as optional corroboration; it is never
-required, because that grant is a far heavier install than the client the gateway already
+required, because that grant is a far heavier install than the connector the gateway already
 needs.
 
 Nothing is reclaimed and nothing appears on the gateway's invoice — the reservation is a
 contract between the customer and their provider. What the gateway owes is visibility and
 routing: the most common cause of an idle reservation is a call site that never addresses
 it (on Bedrock, passing the foundation-model ID instead of the `provisionedModelArn`), and
-that is visible at the call site where the client already sits.
+that is visible at the call site where the connector already sits.
 
 A declared reservation makes `cost_per_1k_tokens_usd` **customer-specific**, which the
 capability catalogue's global `(model, host, region, service_tier)` key does not currently
 express. Reconciling that is
 [#12](https://github.com/hoomji/henry-ai-router/issues/12)'s.
+
+## Behavior sequence and deferrals
+
+This section resolves which behavior is built after target-state routing and which are
+deferred ([#8](https://github.com/hoomji/henry-ai-router/issues/8)). It belongs in the
+specification rather than in a plan because two of the five behaviors are deferred on
+*product* conditions — a customer count and a dependency between behaviors — that no
+implementer can evaluate from the code.
+
+### The connector comes before any second behavior
+
+What follows behavior 1 is not a behavior. The *connector* is the customer-installed
+component this specification already leans on everywhere: it reports the token counts that
+compute *spend under management*, it acknowledges the *directive* whose edges bound an
+*interception window*, it supplies the telemetry that shows a *reservation* going
+unaddressed, and it sits at the call site where the most common cause of an idle
+reservation is visible. The Constraints section's requirement that metering run "for every
+customer from the first day they are connected" cannot start until it exists.
+
+It is also how behavior 1 reaches a customer at all. The gateway is out of the request path
+in normal operation, so target-state routing is delivered as a *ranked list* pushed to the
+connector, not as a per-request choice made inside the gateway. Routing policy stays
+gateway-side and the connector holds none of it, per ADR
+[`0006`](../adr/0006-routing-authority-stays-gateway-side.md).
+
+Naming it as a prerequisite rather than a sixth behavior is deliberate. Folded into
+whichever behavior is built next, its scope would never be argued on its own terms, and
+every behavior after that would inherit a component nobody specified.
+
+### Behavior 4 is the second behavior
+
+Reservation-aware routing requires nothing beyond the connector: no provider credentials, no
+cross-customer cohorts, no multi-tenancy past what the connector already forces. A declared
+reservation is a customer-specific `cost_per_1k_tokens_usd` floor and a routing preference —
+both extensions of machinery behavior 1 builds.
+
+A reservation is **not** part of the *target document*. A target states a desired outcome;
+a reservation states a fact about a contract with a third party, and folding the two together
+would let a reservation's term expiring silently change what a target means with no customer
+write. Reservations are their own customer-authored resource, read by the feasibility check
+and by routing.
+
+### Behavior 2 is third
+
+Strain-triggered interception is the sharpest differentiator and the most gated: it needs the
+connector, it needs the gateway to hold provider credentials (which is the entire reason
+interception exists — see [What interception is
+for](#what-interception-is-for)), and its `anticipatory` evidence class needs behavior 3.
+
+### Behavior 3 is deferred on customer count
+
+Collective fatigue-aware routing cannot be built early, and the obstacle is commercial rather
+than technical. The aggregation contract requires cohorts of at least ten customers per cell;
+below that every cell is suppressed and the behavior emits nothing at all. The trigger is
+therefore approximately **ten concurrently connected customers per `(provider, model,
+region)` cell**.
+
+The consequence for behavior 2 must be stated rather than discovered: until that trigger is
+met, behavior 2 opens `observed` windows only. `anticipatory` windows — the ones that open
+before the customer's own traffic degrades, which is the reactive-to-proactive difference this
+product sells — are gated on the same customer count, and a behavior 2 built as though cohort
+evidence were available on day one would ship the reactive posture the product claims to
+replace.
+
+### Behavior 5 is deferred behind behavior 2
+
+Semantic-fidelity prompt translation follows behavior 2, because the moment it exists for is a
+cross-model failover mid-window.
+
+Behavior 1 does not need it, and that is a claim about `allowed_models` worth making
+explicitly. A customer's `allowed_models` list is their assertion that those models are
+interchangeable *for that workload* — they drew the blast radius, and routing within it is
+what they asked for. The gateway does not adapt a prompt when it moves a request between two
+models the customer listed, and a customer who does not want a model's output is expected to
+remove it from the list rather than to receive a translated approximation of another model's
+behavior.
+
+### What the deferrals mean for the design
+
+- **Streaming splits.** The connector is in the streaming path from its first day — real chat
+  traffic streams, and the connector calls providers directly — but it only needs to pass a
+  stream through and count tokens at the end. The adapter contract's chunk transform is needed
+  only when the gateway transforms mid-stream, which is behavior 2. "Streaming is deferred" is
+  true of the adapter contract and false of the connector.
+- **Authentication arrives with the connector; cohort multi-tenancy does not.** A connector
+  must identify itself to receive a directive and report token counts, and metering across
+  every connected customer makes a single hardcoded customer key untenable. That is an
+  identity change. The larger data-model change — cohort membership across customers — stays
+  with behavior 3.
 
 ## Boundaries and failure behavior
 
@@ -451,7 +559,7 @@ express. Reconciling that is
 - Cross-customer strain signals (behavior 3) must be anonymized and aggregated; one
   customer's traffic pattern must not be inferable by another.
 - An *interception window* (behavior 2) must have explicit start and end so customers can
-  audit exactly which traffic was intercepted. Its edges are the ones the client
+  audit exactly which traffic was intercepted. Its edges are the ones the connector
   acknowledged, and the per-request tag on an intercepted response is the finest-grained
   record; a window is never described as an interval in which all traffic was intercepted,
   because its tail carries canary requests. The window is an audit boundary, not a billing
@@ -538,6 +646,15 @@ express. Reconciling that is
       with no provider credential granted to the gateway (behavior 4).
 - [ ] A prompt authored for model A, routed to model B, produces the intended behavior on
       model B or an explicit fallback notice — never a silent semantic change (behavior 5).
+- [ ] A customer's traffic reaches providers directly through the *connector* while the
+      gateway is out of the request path, with the connector obeying the *ranked list* the
+      gateway pushed and acknowledging the *directive* that delivered it (connector).
+- [ ] A workload in `unmet` carries the target-state response header on requests the gateway
+      never saw, and the status resource and that header agree (connector, behavior 1).
+- [ ] Token counts reported by the connector produce a *spend under management* figure for a
+      connected customer who is not being billed (connector, pricing model).
+- [ ] Below the cohort threshold, every *interception window* is classed `observed` and no
+      window opens on cohort evidence (behavior 2 under the behavior 3 deferral).
 - [ ] With the gateway down, customer traffic still reaches the configured provider
       (fail-open boundary).
 
@@ -545,7 +662,7 @@ express. Reconciling that is
 
 | Question | Blocking | Owner | Resolution |
 |---|---|---|---|
-| Which of the five behaviors is the initial wedge to build first? | Yes — blocks any ExecPlan milestone ordering | henry.tran@uniblock.dev | Open |
+| Which of the five behaviors is the initial wedge to build first, and in what order do the rest follow? | Yes — blocks any ExecPlan milestone ordering | henry.tran@uniblock.dev | Resolved ([#8](https://github.com/hoomji/henry-ai-router/issues/8)). Behavior 1 first (already locked by the tracer plan). What follows it is **not a behavior**: the *connector* is a prerequisite milestone, because behaviors 2, 3 and 4, the pricing model's meter, and behavior 1's own out-of-path delivery all sit on it. Then behavior 4 (reservation-aware routing), which needs no provider credentials, no cohorts and no multi-tenancy, and extends machinery behavior 1 already builds. Then behavior 2. Behaviors 3 and 5 are deferred on stated triggers — see [Behavior sequence and deferrals](#behavior-sequence-and-deferrals). |
 | Is incident-only pricing (behavior 2) compatible with usage-decay pricing (behavior 4) in one business model? | No | henry.tran@uniblock.dev | Resolved ([#7](https://github.com/hoomji/henry-ai-router/issues/7)). Yes — because neither survives as a business model once its terms are separated. Behavior 2 fused "out of the path" with "charged only during incidents"; the first is kept, the second is dropped, because the gateway declares the incident window and must not be paid by its own declarations ([ADR 0004](../adr/0004-incidents-included-not-surcharged.md)). Behavior 4 loses custody and becomes *reservation-aware routing*, a routing input rather than a price. What remains is one model: a flat subscription tiered on spend under management, computed from client telemetry against a forward-only rate card kept separate from the capability catalogue, with incidents included and bypass free in both directions. Specified in [Pricing model](#pricing-model). |
 | Can a customer target a **monthly cost budget** rather than a unit rate? | No — behavior 1 ships with the unit rate | henry.tran@uniblock.dev | Deferred ([#6](https://github.com/hoomji/henry-ai-router/issues/6)). A unit rate is decidable from a state snapshot; a budget requires persistent spend accounting and an exhaustion policy (hard-stop, degrade, or notify), turning provider state from a snapshot into a ledger. Specify as its own behavior if wanted. |
 | Should **error rate** be targetable separately from `success_rate`? | No | henry.tran@uniblock.dev | Deferred ([#6](https://github.com/hoomji/henry-ai-router/issues/6)). For a router the two collapse: a 429 the gateway re-routed is not a customer-visible error. Revisit only if a customer needs to see provider-level error pressure they are shielded from. |
