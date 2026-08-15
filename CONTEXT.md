@@ -189,6 +189,42 @@ because [ADR 0004](docs/adr/0004-incidents-included-not-surcharged.md) is writte
 older vocabulary; there, "the incident window" means the *interception window*.
 _Avoid_: Use *provider strain* or *interception window*
 
+### Collective signals
+
+**Cell**:
+The `(provider, model, region)` key *provider strain* is aggregated under. Internal, and
+never the key of anything disclosed: a disclosed value is keyed no finer than
+`(provider, model-family)`. *Region* here is always the provider's serving region and never
+the customer's, which is never a key of anything.
+_Avoid_: Bucket, partition, group, shard
+
+**Cohort**:
+The set of distinct customers contributing to a *cell*. Its size gates what may be disclosed
+and is itself never disclosed, which is the whole difficulty: the quantity that licenses a
+disclosure cannot be part of one.
+_Avoid_: Sample, population, peer group, tenant set
+
+**Strain contribution**:
+The provider-observed outcome of one customer request — its status code and its latency —
+recorded against a *cell*. A condition of service rather than a setting, and bounded to facts
+the provider side already observed: never content, token volumes, per-customer counts, or
+identity. Distinct from *provider strain*, which is what the contributions aggregate into.
+_Avoid_: Telemetry, data sharing, reporting, signal
+
+**Band**:
+The quantized form a cohort-derived value takes when disclosed — `none`, `elevated`,
+`severe` — and the only form in which one ever is. Over a *cohort* this size an unquantized
+rate is a count, so the coarseness is a privacy property rather than a presentation choice.
+_Avoid_: Level, severity, score, bucket
+
+**Shared strain feed**:
+Retired. Named a customer-readable surface that does not exist: *provider strain* is never
+fed to a customer, it changes their routing, and what the customer sees is a *binding reason*
+attached to the resulting decision. A published provider-health product remains an open
+decision and would be served from synthetic probes, contributing nothing to and reading
+nothing from this aggregate.
+_Avoid_: Use *provider strain*, or *binding reason* for what the customer sees
+
 ### Commerce
 
 **Spend under management**:

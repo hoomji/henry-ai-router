@@ -46,9 +46,12 @@ settled in [Behavior sequence and deferrals](#behavior-sequence-and-deferrals).
    on whether a window was opened (see [Pricing model](#pricing-model)). This behavior is
    specified in full in [Strain-triggered interception in
    detail](#strain-triggered-interception-in-detail) below.
-3. **Collective fatigue-aware routing.** The gateway shares anonymized provider-strain
-   signals (rate-limit pressure, error rates) across its whole customer base, so routing
-   shifts away from a strained provider before any individual customer receives a 429.
+3. **Collective fatigue-aware routing.** Every connected customer contributes
+   provider-observed evidence — status codes and latencies — into a global *cell*, and the
+   gateway routes on the resulting *provider strain*, so a customer's traffic shifts away
+   from a strained provider before that customer receives a 429. Strain is never fed to a
+   customer; it changes their routing. This behavior is specified in full in [Collective
+   strain signals in detail](#collective-strain-signals-in-detail) below.
 4. **Reservation-aware routing.** A customer's declared *reservation* — provider capacity
    they have already paid for, such as Bedrock Provisioned Throughput or Azure OpenAI
    PTU — is surfaced when traffic is not addressing it, and eligible traffic is routed
@@ -345,6 +348,193 @@ Window records are **append-only**: a correction is appended and never rewrites 
 recorded, and records are retained for at least thirteen months, so any renewal
 conversation can reach the whole prior term.
 
+## Collective strain signals in detail
+
+This section specifies required behavior 3 and resolves
+[#10](https://github.com/hoomji/henry-ai-router/issues/10). Terms in *italics* on first use
+are defined in [`CONTEXT.md`](../../CONTEXT.md).
+
+### What a customer contributes, and on what terms
+
+A *strain contribution* is the provider-observed outcome of one of the customer's own
+requests — its status code and its latency — recorded against the *cell* the request went
+to. Contributing is a **condition of service**: not an opt-in, not an opt-out, and not a
+per-customer setting.
+
+The mandate is bounded, and the bound is what makes it defensible. A contribution carries
+only facts the provider side of the connection already observed. It never carries request or
+response content, token volumes, per-customer request counts, or any customer identity. A
+customer who contributes gives up nothing they hold exclusively: the provider already saw
+every fact in it.
+
+Two alternatives were rejected. Opt-in never reaches the *cohort* size the behavior requires,
+so the behavior never starts. Opt-out admits free-riding — consume cohort evidence,
+contribute none — and silos the network effect one tenant at a time, satisfying the letter of
+the Constraints section's prohibition on siloed architecture while defeating exactly what it
+protects. Recorded in [ADR
+0007](../adr/0007-strain-contribution-is-a-condition-of-service.md).
+
+This is not a mechanism that makes leaving costly. Contribution is a condition of *use* and
+stops when use stops; nothing contributed is data a departing customer loses or cannot take
+with them.
+
+### What a connector that contributes nothing means
+
+A *connector* reporting nothing — an old version, one degraded onto the polling fallback, or
+one deliberately stripped — is a **stated degradation**, surfaced on the status resource as
+non-contribution.
+
+Routing continues. What the customer loses is `anticipatory` windows, and the reason is
+mechanical rather than punitive: an anticipatory window is opened per customer and workload
+against the cells that customer is currently routing to, and a connector that reports nothing
+leaves the gateway without a current picture of which cells those are.
+
+Cohort evidence is **not** withheld as a sanction. Withholding protection from a customer
+whose connector broke punishes them for a fault that is usually ours, and it turns a privacy
+mechanism into a commercial lever. The commercial conversation follows the evidence on the
+status resource rather than being enforced in the routing path.
+
+This introduces no new detection. A connector reporting nothing is already a metering failure
+under the Constraints section's requirement that usage metering run for every connected
+customer: the same silence is the same signal.
+
+### The aggregation contract
+
+Detection and disclosure are separate, per [ADR
+0005](../adr/0005-strain-evidence-detection-internal.md). Detection reads the internal
+aggregate at fine granularity; the contract below binds **disclosure** — anything a customer
+is shown — and nothing else.
+
+The contract originates in [#5](https://github.com/hoomji/henry-ai-router/issues/5), which
+wrote it to govern a published feed. No such feed exists (see [Whether the feed is a
+product](#whether-the-feed-is-a-product)), so each provision is recorded here with the
+subject it actually has, including the one that has none.
+
+**Cohort minimum.** No cohort-derived value may be disclosed to any customer unless at least
+**twenty** distinct customers contributed to the cell. #5 sets ten generally and twenty where
+the recipient also contributes to the cell, so that subtracting their own contribution still
+leaves ten others. Because contribution is a condition of service, every recipient is a
+contributor to every cell they route through: the differencing case is not the exception
+here, it is the only case, and twenty is the operative number. A cell below the threshold is
+absent — never zero-filled, never noised.
+
+**Bucketing, and the publication delay that does not survive.** Bands are computed over
+five-minute buckets. #5 also requires publication one full bucket late, and that provision
+**has no subject and is dropped**. Its purpose was to stop a customer correlating flickers in
+a polled feed against their own request timing; the only disclosure that remains is
+contemporaneous with the routing action that requires it, and delaying it would mean telling
+a customer why their traffic moved five minutes after it moved. It is recorded as dropped
+rather than silently omitted, because the reasoning behind it is sound for the feed it was
+written for and would otherwise be reintroduced by the next reader of #5.
+
+What replaces it addresses the same attack directly: **there is no pollable strain surface**.
+A correlation attack needs a time series and a time series needs an endpoint. Cohort-derived
+values are disclosed only as a snapshot attached to a decision record — an *interception
+window* or a *ranked list* change — and never as a queryable resource.
+
+**Signals and their bands.** Three signals are aggregated: 429 rate, 5xx rate, and latency
+deviation. All three disclose on one scale — `none`, `elevated`, `severe` — quantized as a
+fraction of cohort requests for the two rate signals, and as deviation from that provider's
+own trailing 24-hour baseline for latency, on the same standard [What declares a window's
+start](#what-declares-a-windows-start) already sets for thresholds. One scale rather than
+two: a second three-valued vocabulary for the same quantity would eventually be read as a
+distinct set of states.
+
+**Never disclosed.** Absolute request counts, token volumes, or contributor counts per cell.
+Cohort size and composition. Any per-customer dimension. Unquantized rates — over a cohort
+this size, a rate carried to several decimal places is a count. The exact minute a strain
+condition began. Anything derived from a single customer's payloads.
+
+**Cell keys collapse on disclosure.** Strain is aggregated internally under `(provider,
+model, region)`. Anything disclosed is keyed no finer than `(provider, model-family)`. A
+sparsely used region is close to naming its occupants: a cell with three customers in it
+identifies them to anyone who knows the customer base. Throughout this specification *region*
+means the **provider's** serving region and never the customer's, which is never a key of
+anything.
+
+**Change-based suppression.** A disclosed *band* must not move on the addition or removal of
+any single contributor. Over at least twenty contributors with three bands this is nearly
+automatic, which is the point: the coarseness is not a presentation choice, it is what makes
+the cohort minimum mean anything. Separately, a customer receives **at most one disclosure
+per cell per bucket**, however many *workloads* they run. Without that rule a customer with
+forty workloads collects forty samples of one cell and reconstructs by repetition what the
+cohort minimum exists to prevent. #5 does not state this; it is forced by the per-workload
+structure of this product, which #5 did not know about.
+
+**Corroboration.** A cohort-derived routing change requires agreement across at least two
+signal types or two disjoint cohorts. [What declares a window's
+start](#what-declares-a-windows-start) already requires this of an `anticipatory` window; it
+binds a *ranked list* change equally. The cost asymmetry that justifies fast window entry
+does not hold for a shift: a window is free, reversible, and decided per request, while a
+shift moves all of a workload's traffic onto a provider with different latency, cost, and
+output characteristics, with no per-request failover softening it. The blunter action does
+not get the weaker evidence rule.
+
+### What a customer is told, and what is withheld
+
+Disclosure is tiered, because the parts of a binding reason differ in what they leak.
+
+- **At any cohort size**: the *evidence class*, which signal types corroborated, and the
+  providers involved. These are facts about the gateway's decision rather than values
+  computed over a cohort, and no contributor can be differenced out of them.
+- **At twenty contributors or more**: the *band*. It is the only k-sensitive value a binding
+  reason carries.
+
+So between the behavior's start and a cohort of twenty, a customer learns that cohort
+evidence moved their routing and what corroborated it, but not how strained the provider is.
+This is a second disclosure asymmetry alongside `anticipatory` versus `observed`, and it is
+stated to the customer rather than smoothed over.
+
+### What the customer sees when routing shifts
+
+A shift on cohort evidence in normal operation is a *directive* carrying a new *ranked list*.
+It is **not** an *interception window*: no window record exists and no per-request response
+header is written, because the gateway is not in the request path. The strongest audit
+surface in this product is structurally unavailable exactly where the anonymization question
+is sharpest, and this specification states that rather than implying parity — a cohort-driven
+shift is less auditable than an interception window, because we were never in the path to
+prove what we did.
+
+What the customer gets instead is the **binding reason** the ranked list already owes them on
+the standard behavior 1 sets — a routing decision that cannot state why it chose must not be
+made — carrying the tiered disclosure above and capped by it. It appears on the **status
+resource**.
+
+It does not produce a notification. A shift that holds the target is the product working as
+sold, and paging a customer for it trains them to ignore the notifications that matter. A
+notification follows only when the shift also moves the workload into `unmet` or breaches a
+ceiling, which are behavior 1's existing conditions.
+
+### The two aggregates must not be wired together
+
+[ADR 0005](../adr/0005-strain-evidence-detection-internal.md) records, as a consequence of
+splitting detection from disclosure, that two aggregates now exist and that letting a
+customer-facing surface read the internal one is a privacy failure no test currently catches.
+Behavior 3 is the behavior that makes that hazard live, so the guard ships with it: no
+customer-facing surface may read the internal fine-grained aggregate, and the check is
+structural. Sampling outputs for leaks tests the wrong property; what is worth enforcing is
+that the wire between the two does not exist.
+
+### Whether the feed is a product
+
+Publishing a provider-health feed is **not part of this behavior** and remains an open
+decision (see [Open product decisions](#open-product-decisions)). If it is taken, it is
+served from **gateway-run synthetic probes** and never from customer contributions. A
+customer-derived feed would place the network effect's output and the product's largest
+disclosure surface in the same pipe, and would hand a competitor the value of a customer base
+they do not have. A synthetic feed carries no contribution from anyone, and therefore no
+anonymization contract at all.
+
+The objection ADR 0005 raises against synthetic probes does not apply here. That objection is
+that a probe on a gateway-held key measures the wrong account, because rate limits are scoped
+per organization — decisive for proving one customer's recovery, irrelevant to publishing
+coarse provider availability.
+
+### When this behavior starts
+
+Behavior 3 is deferred on a customer count, and the trigger and its basis are stated in
+[Behavior 3 is deferred on customer count](#behavior-3-is-deferred-on-customer-count).
+
 ## Pricing model
 
 This section resolves whether behaviors 2 and 4 can coexist as business models
@@ -495,10 +685,21 @@ for](#what-interception-is-for)), and its `anticipatory` evidence class needs be
 ### Behavior 3 is deferred on customer count
 
 Collective fatigue-aware routing cannot be built early, and the obstacle is commercial rather
-than technical. The aggregation contract requires cohorts of at least ten customers per cell;
-below that every cell is suppressed and the behavior emits nothing at all. The trigger is
-therefore approximately **ten concurrently connected customers per `(provider, model,
-region)` cell**.
+than technical. The trigger is approximately **ten concurrently connected customers per
+`(provider, model, region)` cell**.
+
+That number is derived from statistical power and the corroboration rule, **not** from the
+aggregation contract's cohort minimum. The contract's thresholds bind disclosure and not
+detection ([ADR 0005](../adr/0005-strain-evidence-detection-internal.md)), so a suppressed
+cell stops nothing the detector does. What stops the behavior below ten is that a
+cohort-derived routing change requires corroboration across two signal types or two disjoint
+cohorts, and neither is reachable from a handful of contributors: the aggregate is noise with
+no population in it to separate a provider's degradation from one customer's bad afternoon.
+
+A second threshold sits above the trigger and gates disclosure rather than the behavior. The
+*band* a binding reason carries requires twenty contributors to the cell, so between ten and
+twenty the behavior runs and the customer is told less about it — see [What a customer is
+told, and what is withheld](#what-a-customer-is-told-and-what-is-withheld).
 
 The consequence for behavior 2 must be stated rather than discovered: until that trigger is
 met, behavior 2 opens `observed` windows only. `anticipatory` windows — the ones that open
@@ -589,8 +790,13 @@ behavior.
 
 ## Constraints
 
-- The gateway's value proposition depends on the network effect of shared strain signals
-  (behavior 3); the design must not require per-tenant data silos that prevent it.
+- Contributing strain evidence is a condition of service, not a per-customer setting. The
+  gateway's value proposition depends on the network effect of cross-customer strain
+  (behavior 3), and a per-tenant opt-out silos that effect one tenant at a time as
+  effectively as a siloed architecture would. The mandate is bounded in the same breath: a
+  *strain contribution* carries only facts the provider side of the connection already
+  observed — status codes and latencies — and never request or response content, token
+  volumes, per-customer counts, or customer identity.
 - Usage metering must run for every customer from the first day they are connected,
   including customers who are not being billed. Tiers are flat and indexed to computed
   spend, so their boundaries are guesses until a real token distribution exists — and the
@@ -601,7 +807,9 @@ behavior.
 - The gateway must not acquire a mechanism that makes leaving it costly — no held
   reservations, no custody of provider contracts, no data a departing customer cannot take
   with them. Bypass staying free is what distinguishes this product from the always-on
-  middleman the non-goals exclude.
+  middleman the non-goals exclude. Mandatory strain contribution is not such a mechanism: it
+  is a condition of use rather than a hold on the customer, and nothing contributed is data a
+  departing customer loses or cannot take with them.
 
 ## Acceptance criteria
 
@@ -639,8 +847,20 @@ behavior.
 - [ ] A period in which the gateway could not serve the status resource or push a routing
       directive produces a credit the customer did not have to ask for (pricing model).
 - [ ] When one customer's traffic strains a provider, another customer's routing shifts
-      away from that provider before receiving a rate-limit error, with no
-      customer-identifying data exposed (behavior 3).
+      away from that provider before receiving a rate-limit error, and the shift carries a
+      binding reason on the status resource naming its evidence class, the signal types that
+      corroborated it, and the providers involved (behavior 3).
+- [ ] No customer-facing surface — status resource, binding reason, window record, response
+      header, or any published feed — can read the internal fine-grained strain aggregate;
+      disclosure reads only the contract-bound aggregate, and a wire between the two fails
+      the build rather than a review (behavior 3, [ADR
+      0005](../adr/0005-strain-evidence-detection-internal.md)).
+- [ ] Below twenty contributors to a cell, a cohort-derived binding reason names its evidence
+      class and corroborating signal types and carries no band; at twenty or above it carries
+      the band, and a customer running many workloads receives at most one disclosure per
+      cell per bucket (behavior 3).
+- [ ] A connected customer whose connector reports no strain contributions is shown as
+      non-contributing on the status resource, and continues to receive routing (behavior 3).
 - [ ] A declared reservation that traffic is not addressing is surfaced to the customer,
       and eligible traffic is subsequently routed onto it ahead of on-demand capacity,
       with no provider credential granted to the gateway (behavior 4).
@@ -668,6 +888,8 @@ behavior.
 | Should **error rate** be targetable separately from `success_rate`? | No | henry.tran@uniblock.dev | Deferred ([#6](https://github.com/hoomji/henry-ai-router/issues/6)). For a router the two collapse: a 429 the gateway re-routed is not a customer-visible error. Revisit only if a customer needs to see provider-level error pressure they are shielded from. |
 | Should a customer be able to see, or set, the confidence the feasibility check needs before it rejects? | No — the margin ships as a fixed rule | henry.tran@uniblock.dev | Open ([#12](https://github.com/hoomji/henry-ai-router/issues/12)). Rejection is biased optimistic with a variance-based margin the customer cannot see or tune. A customer who genuinely wants a strict pre-flight check ("reject unless you are certain") has no way to ask for one, and a customer who wants none has no way to opt out. Revisit once abstention and false-`unmet` rates are observable. |
 | Should **throughput / rate-limit headroom** be targetable? | No | henry.tran@uniblock.dev | Deferred ([#6](https://github.com/hoomji/henry-ai-router/issues/6)). Headroom is the signal behavior 3 shares across customers, not an outcome an individual customer states. Revisit when behavior 3 is specified. |
+| Is contributing strain evidence opt-in, opt-out, or a condition of service, and is #5's aggregation contract adopted as written? | Yes — blocks behavior 3 | henry.tran@uniblock.dev | Resolved ([#10](https://github.com/hoomji/henry-ai-router/issues/10)). Contribution is a **condition of service**, bounded to facts the provider side already observed ([ADR 0007](../adr/0007-strain-contribution-is-a-condition-of-service.md)). The contract is adopted with three changes: its cohort minimum is operative at **twenty** rather than ten, because condition-of-service makes every recipient a contributor and so makes #5's differencing case the only case; its one-bucket publication delay is **dropped** as having no subject once nothing is published; and its corroboration rule is **extended** to windowless routing shifts. Specified in [Collective strain signals in detail](#collective-strain-signals-in-detail). |
+| Should the gateway publish a provider-health feed as a standalone product? | No — behavior 3 ships without one | henry.tran@uniblock.dev | Deferred ([#10](https://github.com/hoomji/henry-ai-router/issues/10)). OpenRouter publishes uptime charts with no stated anonymization contract, which is a real differentiation opening. If taken, the feed is served from gateway-run synthetic probes and never from customer contributions, which would otherwise put the network effect's output and the product's largest disclosure surface in one pipe. Revisit once behavior 3 is running. |
 
 ## Delivery evidence
 
