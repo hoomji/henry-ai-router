@@ -2,7 +2,7 @@
 
 - State: `Draft`
 - Owner: henry.tran@uniblock.dev
-- Reviewed: 2026-08-14
+- Reviewed: 2026-08-15
 - Sources: idea record formerly at `IDEA.md` (five random-stimulus ideas and their
   meta-pattern, reproduced below so this specification stands alone)
 - Supersedes: none
@@ -24,10 +24,10 @@ costs them an outage or an invoice surprise.
 
 A customer can state what they need from their AI traffic (reliability and cost targets)
 and the gateway absorbs provider risk on their behalf: it anticipates provider strain,
-intervenes only when needed, keeps behavior consistent across models, and stops billing
-for capacity nobody is using. The observable difference is fewer provider-caused
-incidents reaching the customer, and a bill that tracks value delivered rather than
-middleman presence.
+intervenes only when needed, keeps behavior consistent across models, and stops them
+paying their provider for reserved capacity nobody is using. The observable difference is
+fewer provider-caused incidents reaching the customer, and a bill that tracks risk
+absorbed rather than middleman presence.
 
 ## Required behavior
 
@@ -39,16 +39,21 @@ must do if built.
    the gateway continuously adjusts the provider mix to hold that outcome proactively
    rather than reacting after a breach. This behavior is specified in full in
    [Target-state routing in detail](#target-state-routing-in-detail) below.
-2. **Incident-only routing.** During normal operation the gateway is bypassed and does
-   not sit in the request path as a chargeable middleman; it intercepts traffic — and
-   charges — only while a detected incident is in progress (rate-limit storm, provider
-   outage, model deprecation).
+2. **Incident-only interception.** The gateway is absent from the request path in normal
+   operation and takes the data path only while a declared incident is in progress
+   (rate-limit storm, provider outage, model deprecation). Both edges of that window are
+   auditable. Interception carries **no incremental charge**: what the customer pays does
+   not depend on whether an incident was declared (see
+   [Pricing model](#pricing-model)).
 3. **Collective fatigue-aware routing.** The gateway shares anonymized provider-strain
    signals (rate-limit pressure, error rates) across its whole customer base, so routing
    shifts away from a strained provider before any individual customer receives a 429.
-4. **Usage-decay pricing.** Reserved provider capacity that a customer pre-provisioned
-   but is not using is priced or reclaimed, instead of billing only per-call or
-   per-token while idle reservations sit wasted.
+4. **Reservation-aware routing.** A customer's declared *reservation* — provider capacity
+   they have already paid for, such as Bedrock Provisioned Throughput or Azure OpenAI
+   PTU — is surfaced when traffic is not addressing it, and eligible traffic is routed
+   onto it ahead of on-demand capacity. The gateway never holds the reservation. Formerly
+   "usage-decay pricing"; it is not a pricing behavior (see
+   [Pricing model](#pricing-model)).
 5. **Semantic-fidelity prompt translation.** When a request is routed to a different
    model than the one it was written for, the gateway adapts the prompt so the intended
    behavior is preserved — not just the API shape — for example restructuring a system
@@ -201,8 +206,13 @@ otherwise misled: a workload already `unmet` on a dimension whose corrected floo
 exceeds their target. A routine floor refresh is not an event a customer hears about; being
 told wrong is.
 
-Target state is deliberately **not** reported on the bill; entangling behavior 1 with
-billing would couple it to the pricing decisions that remain open.
+Target state is deliberately **not** reported on the bill. The original reason — that
+pricing was undecided — has expired, and the coupling now runs the other way: the invoice
+is computed from this behavior's own telemetry. The decoupling stands on a different
+footing. `unmet` printed next to a charge reads as a claim, and the only claim the gateway
+honors attaches to control-plane availability, never to provider outcomes (see
+[Pricing model](#pricing-model)). Putting target state on the invoice would invite the
+refund conversation that incident-conditional billing was rejected to avoid.
 
 ### Relaxation
 
@@ -211,6 +221,93 @@ gateway reports `unmet` for it. A dimension marked hard never yields: the reques
 instead. Customers who declare no priority and no hard dimension still get deterministic,
 explainable behavior from the defaults above rather than gateway discretion — the point
 of this behavior is that the gateway's choices are predictable without a routing rule.
+
+## Pricing model
+
+This section resolves whether behaviors 2 and 4 can coexist as business models
+([#7](https://github.com/hoomji/henry-ai-router/issues/7)). They can, because neither one
+is a business model once its terms are separated. Behavior 2 welded two claims into one
+sentence — *the gateway is out of the path* (a data-path fact) and *the gateway charges
+only during incidents* (a commercial fact). Behavior 4 was named for a pricing mechanism
+it does not require. Unwelding the first and removing custody from the second leaves a
+single pricing model with two behaviors hanging off it.
+
+The customer-facing promise is **not** "you are billed only during incidents." It is *you
+do not pay for our presence in your request path; you pay for provider risk absorbed.*
+
+### What the customer pays
+
+A flat subscription, tiered on **spend under management**: the customer's provider spend
+for traffic the gateway manages, computed from the client's reported token counts against
+a published **rate card**. There is no percentage of spend, no per-request markup, and no
+per-incident fee.
+
+The rate card is a versioned artifact distinct from the *capability catalogue*. The two
+carry the same units and incompatible obligations: a capability floor is an optimistic
+claim about what a provider can do, is permitted to *abstain* when its sources go stale
+([ADR 0003](../adr/0003-provenance-tiered-capability-catalogue.md)), and is corrected
+backwards when it turns out wrong. A billing rate may do none of those things. The rate
+card may be derived from the catalogue on a slow cadence, but it changes only forward and
+a floor correction never restates a settled invoice.
+
+Token counts are reported by the customer's own client. That is accepted rather than
+audited: the code that reports usage is the code that receives the routing benefit, so
+under-reporting degrades the customer's own provider mix.
+
+### What an incident costs
+
+Nothing beyond the subscription. The gateway declares the incident window
+([#9](https://github.com/hoomji/henry-ai-router/issues/9)), and a gateway paid by its own
+declarations cannot be trusted to make them honestly. Incident cost is priced into the
+tier, not recovered from it; margin is therefore worst in the month a provider degrades
+badly, which is accepted. Recorded in
+[ADR 0004](../adr/0004-incidents-included-not-surcharged.md).
+
+### What a bypassed customer owes
+
+Bypass is free, in both of its forms, and this is deliberate.
+
+- **Involuntary** (the gateway is unavailable, fail-open fires): the customer is owed a
+  credit against **control-plane availability** — whether the gateway can serve the status
+  resource and push a routing directive a client acknowledges. Never against request
+  success, which belongs to the provider and which fail-open exists to preserve. Because
+  the gateway is out of the path, a control-plane outage is not observable to the
+  customer: their traffic continues to the last-directed provider. The credit is therefore
+  **self-issued from the gateway's own measurement**. A credit only the vendor can detect
+  is either a written commitment or nothing at all.
+- **Voluntary** (the customer removes the client and stops paying): permitted, and no
+  mechanism exists to make it costly. Any such mechanism would make the gateway the
+  always-on middleman the non-goals forbid. Retention rests on the client degrading to a
+  static base URL without a live control plane — no mix, no feasibility check, no strain
+  signal, no incident escalation. If that is not enough, the product is wrong, and that is
+  to be learned from churn rather than prevented by lock-in.
+
+### Reservations
+
+A reservation is **customer-held and customer-declared**. The gateway never buys, holds,
+or resells provider capacity: if the gateway held the reservation, bypassing the gateway
+would forfeit capacity the customer paid for, which inverts the promise above and would
+make this a capacity-broker business carrying provider commitments on its own books.
+
+The customer declares each reservation (host, model, size, term, effective rate).
+Utilization is computed from the client's own telemetry rather than from the provider,
+because the authoritative provider signals do not serve routing: Azure publishes
+`Provisioned-managed Utilization V2` but Azure Monitor lags 30 seconds to 15 minutes,
+against a 5-minute measurement window, and Bedrock publishes no utilization figure at all.
+A read-only cloud credential may be offered as optional corroboration; it is never
+required, because that grant is a far heavier install than the client the gateway already
+needs.
+
+Nothing is reclaimed and nothing appears on the gateway's invoice — the reservation is a
+contract between the customer and their provider. What the gateway owes is visibility and
+routing: the most common cause of an idle reservation is a call site that never addresses
+it (on Bedrock, passing the foundation-model ID instead of the `provisionedModelArn`), and
+that is visible at the call site where the client already sits.
+
+A declared reservation makes `cost_per_1k_tokens_usd` **customer-specific**, which the
+capability catalogue's global `(model, host, region, service_tier)` key does not currently
+express. Reconciling that is
+[#12](https://github.com/hoomji/henry-ai-router/issues/12)'s.
 
 ## Boundaries and failure behavior
 
@@ -238,7 +335,12 @@ of this behavior is that the gateway's choices are predictable without a routing
 - Cross-customer strain signals (behavior 3) must be anonymized and aggregated; one
   customer's traffic pattern must not be inferable by another.
 - Incident detection (behavior 2) must declare incident start and end explicitly so
-  customers can audit exactly which traffic was intercepted and charged.
+  customers can audit exactly which traffic was intercepted. The window is an audit
+  boundary, not a billing boundary: no charge depends on it.
+- A control-plane outage is not observable to the customer, because their traffic
+  continues to the last-directed provider. The gateway must therefore measure its own
+  control-plane availability and issue the resulting credit unprompted; a customer is
+  never required to detect a breach in order to be owed for it.
 - Prompt translation (behavior 5) must be able to report that no faithful translation
   exists and fall back to the untranslated prompt rather than silently altering intent.
 
@@ -254,8 +356,17 @@ of this behavior is that the gateway's choices are predictable without a routing
 
 - The gateway's value proposition depends on the network effect of shared strain signals
   (behavior 3); the design must not require per-tenant data silos that prevent it.
-- Pricing behaviors (2 and 4) directly shape the business model and must be reversible in
-  rollout: pilotable with a subset of customers before general availability.
+- Usage metering must run for every customer from the first day they are connected,
+  including customers who are not being billed. Tiers are flat and indexed to computed
+  spend, so their boundaries are guesses until a real token distribution exists — and the
+  meter is the same telemetry behavior 1 already requires, so the obligation costs nothing
+  to honor early and is expensive to retrofit. (Replaces an earlier constraint requiring
+  pricing behaviors 2 and 4 to be pilotable with a subset of customers; there is no longer
+  any per-customer pricing variance to pilot.)
+- The gateway must not acquire a mechanism that makes leaving it costly — no held
+  reservations, no custody of provider contracts, no data a departing customer cannot take
+  with them. Bypass staying free is what distinguishes this product from the always-on
+  middleman the non-goals exclude.
 
 ## Acceptance criteria
 
@@ -278,13 +389,19 @@ of this behavior is that the gateway's choices are predictable without a routing
 - [ ] When ceilings conflict, the lowest-priority ceiling yields and is reported; a
       dimension marked hard fails the request instead of being breached (behavior 1).
 - [ ] Traffic outside a declared incident window reaches the provider without gateway
-      interception or gateway charges; traffic inside one is intercepted, and both window
-      edges are visible to the customer (behavior 2).
+      interception; traffic inside one is intercepted, and both window edges are visible
+      to the customer (behavior 2).
+- [ ] Two customers with identical traffic and different incident histories receive
+      identical invoices; no invoice line varies with whether an incident was declared
+      (behavior 2, pricing model).
+- [ ] A period in which the gateway could not serve the status resource or push a routing
+      directive produces a credit the customer did not have to ask for (pricing model).
 - [ ] When one customer's traffic strains a provider, another customer's routing shifts
       away from that provider before receiving a rate-limit error, with no
       customer-identifying data exposed (behavior 3).
-- [ ] Idle reserved capacity is visibly priced or reclaimed on the customer's bill or
-      dashboard rather than silently held (behavior 4).
+- [ ] A declared reservation that traffic is not addressing is surfaced to the customer,
+      and eligible traffic is subsequently routed onto it ahead of on-demand capacity,
+      with no provider credential granted to the gateway (behavior 4).
 - [ ] A prompt authored for model A, routed to model B, produces the intended behavior on
       model B or an explicit fallback notice — never a silent semantic change (behavior 5).
 - [ ] With the gateway down, customer traffic still reaches the configured provider
@@ -295,7 +412,7 @@ of this behavior is that the gateway's choices are predictable without a routing
 | Question | Blocking | Owner | Resolution |
 |---|---|---|---|
 | Which of the five behaviors is the initial wedge to build first? | Yes — blocks any ExecPlan milestone ordering | henry.tran@uniblock.dev | Open |
-| Is incident-only pricing (behavior 2) compatible with usage-decay pricing (behavior 4) in one business model? | No | henry.tran@uniblock.dev | Open |
+| Is incident-only pricing (behavior 2) compatible with usage-decay pricing (behavior 4) in one business model? | No | henry.tran@uniblock.dev | Resolved ([#7](https://github.com/hoomji/henry-ai-router/issues/7)). Yes — because neither survives as a business model once its terms are separated. Behavior 2 fused "out of the path" with "charged only during incidents"; the first is kept, the second is dropped, because the gateway declares the incident window and must not be paid by its own declarations ([ADR 0004](../adr/0004-incidents-included-not-surcharged.md)). Behavior 4 loses custody and becomes *reservation-aware routing*, a routing input rather than a price. What remains is one model: a flat subscription tiered on spend under management, computed from client telemetry against a forward-only rate card kept separate from the capability catalogue, with incidents included and bypass free in both directions. Specified in [Pricing model](#pricing-model). |
 | Can a customer target a **monthly cost budget** rather than a unit rate? | No — behavior 1 ships with the unit rate | henry.tran@uniblock.dev | Deferred ([#6](https://github.com/hoomji/henry-ai-router/issues/6)). A unit rate is decidable from a state snapshot; a budget requires persistent spend accounting and an exhaustion policy (hard-stop, degrade, or notify), turning provider state from a snapshot into a ledger. Specify as its own behavior if wanted. |
 | Should **error rate** be targetable separately from `success_rate`? | No | henry.tran@uniblock.dev | Deferred ([#6](https://github.com/hoomji/henry-ai-router/issues/6)). For a router the two collapse: a 429 the gateway re-routed is not a customer-visible error. Revisit only if a customer needs to see provider-level error pressure they are shielded from. |
 | Should a customer be able to see, or set, the confidence the feasibility check needs before it rejects? | No — the margin ships as a fixed rule | henry.tran@uniblock.dev | Open ([#12](https://github.com/hoomji/henry-ai-router/issues/12)). Rejection is biased optimistic with a variance-based margin the customer cannot see or tune. A customer who genuinely wants a strict pre-flight check ("reject unless you are certain") has no way to ask for one, and a customer who wants none has no way to opt out. Revisit once abstention and false-`unmet` rates are observable. |

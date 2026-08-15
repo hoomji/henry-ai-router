@@ -37,6 +37,12 @@ ADRs live at `docs/adr/NNNN-short-slug.md`.
   and observed infeasibility are two states, not one.
 - [`0002`](docs/adr/0002-durable-target-store-with-cross-process-concurrency.md) — the
   target document lives in a durable store designed for concurrent writers.
+- [`0003`](docs/adr/0003-provenance-tiered-capability-catalogue.md) — capability floors
+  carry a provenance tier and an age, and the feasibility check abstains rather than
+  rejecting on an expired floor. Amends `0001` in part.
+- [`0004`](docs/adr/0004-incidents-included-not-surcharged.md) — incidents are included in
+  the subscription, not surcharged, because the gateway declares the incident window and
+  must not be paid by its own declarations.
 
 ## Domain language
 

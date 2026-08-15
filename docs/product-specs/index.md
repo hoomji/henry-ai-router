@@ -8,7 +8,7 @@ State vocabulary: `Draft`, `Accepted`, `Delivered`, `Superseded`.
 
 | Specification | User and problem | State | Delivery evidence | Owner | Reviewed |
 |---|---|---|---|---|---|
-| [provider-risk-management-gateway.md](provider-risk-management-gateway.md) | Teams on hosted AI providers exposed to provider failure, degradation, and idle-capacity waste | Draft | — | henry.tran@uniblock.dev | 2026-08-14 |
+| [provider-risk-management-gateway.md](provider-risk-management-gateway.md) | Teams on hosted AI providers exposed to provider failure, degradation, and idle-capacity waste | Draft | — | henry.tran@uniblock.dev | 2026-08-15 |
 
 ## Entry contract
 

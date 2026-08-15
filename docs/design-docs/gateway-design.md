@@ -103,7 +103,7 @@ An adapter is a pure translation pair, no I/O, no framework types:
 bytes or JSON), so the same contract can be re-expressed as a Rust trait or Go interface.
 The actual `fetch` happens in `server.ts`, not in the adapter — adapters describe the
 call; the data path performs it. `costOf` exists from M1 (returning a constant for the
-passthrough adapter) because target-state routing (M2) and usage-decay pricing (spec
+passthrough adapter) because target-state routing (M2) and reservation-aware routing (spec
 behavior 4) both consume per-request cost, and retrofitting it later would touch every
 adapter.
 

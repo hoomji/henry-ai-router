@@ -6,8 +6,8 @@ This ExecPlan is a living document. Keep `Progress`, `Surprises & Discoveries`, 
 
 Today this repository contains only documentation: a product specification at
 `docs/product-specs/provider-risk-management-gateway.md` describing an AI router/gateway
-that sells provider risk management (target-state routing, incident-only routing,
-collective fatigue-aware routing, usage-decay pricing, semantic-fidelity prompt
+that sells provider risk management (target-state routing, incident-only interception,
+collective fatigue-aware routing, reservation-aware routing, semantic-fidelity prompt
 translation), and the harness around it. Nothing runs.
 
 After this plan, a person can start a minimal gateway process locally, send it an

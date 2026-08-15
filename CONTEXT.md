@@ -120,3 +120,43 @@ committed with the target document write and keyed by its version. What makes a 
 floor correction a comparison rather than a reconstruction. Never part of the target
 document, which holds only what the customer authored.
 _Avoid_: Audit log, snapshot, history, metadata
+
+### Commerce
+
+**Spend under management**:
+The customer's provider spend for traffic the gateway manages, computed from the client's
+reported token counts against the *rate card*. The quantity a subscription tier is indexed
+to — never a quantity a percentage is taken of, and never money the gateway touches.
+_Avoid_: Revenue, GMV, billable volume, spend
+
+**Rate card**:
+The versioned schedule of provider unit prices used to convert token counts into *spend
+under management*. Changes only forward: a correction never restates a settled invoice.
+Distinct from the *capability floor*, which shares its units but is an optimistic claim
+that may *abstain* and may be corrected backwards.
+_Avoid_: Price list, catalogue, cost table, rates
+
+**Control-plane availability**:
+Whether the gateway can serve the status resource and push a routing directive the
+client acknowledges. The sole quantity a customer credit attaches to. Not request success,
+which belongs to the provider and which *fail-open* exists to preserve.
+_Avoid_: Uptime, SLA, availability, gateway health
+
+**Reservation**:
+Provider capacity a customer has already paid for under their own contract — Bedrock
+Provisioned Throughput, Azure OpenAI PTU — declared to the gateway by the customer. Always
+customer-held: the gateway never buys, holds, or resells it.
+_Avoid_: Provisioned capacity, committed spend, PTU, allocation
+
+**Addressing a reservation**:
+Directing a request at a *reservation* so it consumes capacity already paid for, rather
+than falling to on-demand. What idle reserved capacity is idle for want of. Distinct from a
+reservation's existence, which the customer declares, and from its size, which the gateway
+never verifies.
+_Avoid_: Using, utilizing, hitting, consuming
+
+**Usage-decay pricing**:
+Retired. Named a business model that does not exist here: nothing decays, and idle
+reserved capacity is never priced or reclaimed by the gateway. Superseded by
+*reservation-aware routing*, which is a routing input rather than a price.
+_Avoid_: Use *reservation-aware routing*
