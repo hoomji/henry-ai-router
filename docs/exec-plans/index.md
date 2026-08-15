@@ -6,10 +6,9 @@ section below and lives in exactly one directory: `active/` or `completed/`.
 
 ## Active
 
-_No active plans._
-
 | Plan | Goal | Current milestone | Owner | Updated |
 |---|---|---|---|---|
+| [active/2026-08-14-provider-risk-gateway-tracer.md](active/2026-08-14-provider-risk-gateway-tracer.md) | From spec to a runnable fail-open gateway tracer plus target-state routing prototype | M1 — fail-open gateway tracer (TypeScript on Node) | henry.tran@uniblock.dev | 2026-08-14 |
 
 ## Completed
 

@@ -6,7 +6,6 @@ nothing to deploy. Treat that as the current state, not as a gap to fill silentl
 
 ## Repository map
 
-- Product exploration and idea record: [`IDEA.md`](IDEA.md)
 - Architecture and boundaries: [`ARCHITECTURE.md`](ARCHITECTURE.md)
 - Decisions: no ADRs yet; use `docs/adr/NNNN-short-slug.md` when the first one is needed
 - Domain language: no `CONTEXT.md` yet; create it once a term actually needs resolving
@@ -46,6 +45,3 @@ Follow the linked sources of truth. Keep changes within the requested scope. Ver
 acceptance criteria with the narrowest relevant checks, then run the repository gate when
 the environment supports it. Follow the representative workflow's evidence contract.
 Report skipped checks and residual risk.
-
-An idea in `IDEA.md` is exploration, not a commitment: promote it to a product
-specification before treating it as required behavior.
