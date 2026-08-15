@@ -1,9 +1,14 @@
 # Gateway design: modules, adapter contract, routing seam
 
-- State: `Proposed`
+- State: `Partially verified` (M1's portion observed; everything M2 introduces is still
+  proposed design)
 - Owner: henry.tran@uniblock.dev
-- Last verified: Unverified (no implementation exists yet; every claim below is proposed
-  design, not observed behavior)
+- Last verified: 2026-08-15 — against M1 of the tracer ExecPlan. Verified: the `server.ts`,
+  `types.ts`, `config.ts`, `routing/chooseProvider.ts`, `providers/adapter.ts`,
+  `providers/passthrough.ts`, and `dev/stubUpstream.ts` parts of the layout; the dependency
+  rule; the adapter contract including `costOf`; and the fail-open path. Unverified: every
+  module under `targets/` and `management/`, `routing/stats.ts`, and `dev/load.ts`, none of
+  which exist yet.
 - Domain language: [`../../CONTEXT.md`](../../CONTEXT.md)
 - Review trigger: the first commit under `gateway/`, or any revision to the governing
   spec or ExecPlan below
@@ -502,11 +507,25 @@ work gated on the spec's open decisions.
 
 ## Evidence
 
-None yet. Verification for this document means: the `gateway/` tree matches the layout
-above; `routing/`, `targets/`, and `providers/` contain no imports of `server.ts`,
-`management/`, or `node:http`; `chooseProvider` returns a decision carrying a binding
-reason; and the M1/M2 transcripts in the ExecPlan exist. When that check is run, record
-the date and move State to `Verified`.
+2026-08-15, against M1. The four checks this document names, and what each found:
+
+- **The tree matches the layout.** For M1's share of it, yes — file for file, at the paths
+  above. The layout is a superset: `routing/stats.ts`, everything under `targets/` and
+  `management/`, `providers/capabilities.ts`, and `dev/load.ts` are M2's and absent.
+- **No inward imports.** Verified: `routing/` and `providers/` import only `../types.js`
+  and each other, and nothing under either mentions `node:http`, `server.ts`, or
+  `management/`. `server.ts` and `dev/stubUpstream.ts` are the only files importing
+  `node:http`.
+- **`chooseProvider` returns a binding reason.** Verified as a type: `RoutingDecision`
+  carries `provider`, `boundBy`, and per-candidate `rejected` reasons. M1 populates only
+  the first — with one candidate there is nothing to reject and nothing binding — so the
+  shape is verified and the content is not yet exercised.
+- **The M1 transcript exists.** Yes, in the ExecPlan's *Artifacts and Notes*: a proxied
+  completion, and the same completion carrying `x-gateway-failopen: true` under a thrown
+  routing seam. `npm --prefix gateway test` covers both, plus `502` on an unreachable
+  upstream.
+
+Move State to `Verified` when the same four checks pass over the full M2 tree.
 
 Revision note: 2026-08-15 — resolved
 [#12](https://github.com/hoomji/henry-ai-router/issues/12) (capability catalogue) on the
