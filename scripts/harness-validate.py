@@ -278,8 +278,8 @@ def repository_path(
     return resolved
 
 
-def package_scripts(root: Path) -> dict[str, str] | None:
-    package = root / "package.json"
+def package_scripts(root: Path, workspace: str | None = None) -> dict[str, str] | None:
+    package = root / "package.json" if workspace is None else root / workspace / "package.json"
     try:
         parsed = json.loads(package.read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError, json.JSONDecodeError):
@@ -370,8 +370,26 @@ def validate_command(
         return
 
     if program in {"npm", "pnpm", "yarn", "bun"}:
-        script_index = 2 if len(words) > 1 and words[1] == "run" else 1
-        if script_index >= len(words):
+        # A package may live in a subdirectory, named by --prefix/--dir/--cwd. Resolve it
+        # so a command like `npm --prefix gateway run start` is checked against that
+        # package rather than reported as a missing root package.json.
+        workspace: str | None = None
+        rest: list[str] = []
+        index = 1
+        while index < len(words):
+            word = words[index]
+            if word in {"--prefix", "--dir", "-C", "--cwd"} and index + 1 < len(words):
+                workspace = words[index + 1]
+                index += 2
+                continue
+            if word.startswith("-"):
+                index += 1
+                continue
+            rest.append(word)
+            index += 1
+
+        script_words = rest[1:] if rest and rest[0] == "run" else rest
+        if not script_words:
             add_error(
                 errors,
                 "command.package-script",
@@ -379,14 +397,27 @@ def validate_command(
                 "Name an existing package.json script so the entrypoint can be checked.",
             )
             return
-        script = words[script_index]
-        scripts = package_scripts(root)
+        script = script_words[0]
+        # `install` and `ci` are the package manager's own subcommands, not scripts; a
+        # package.json that exists is all they need to be valid.
+        if script in {"install", "ci", "i"} and script not in ("run",):
+            if package_scripts(root, workspace) is None:
+                where = "package.json" if workspace is None else f"{workspace}/package.json"
+                add_error(
+                    errors,
+                    "command.package",
+                    f"{label} references {program} but {where} is unavailable.",
+                    f"Add {where} or correct the command.",
+                )
+            return
+        scripts = package_scripts(root, workspace)
         if scripts is None:
+            where = "package.json" if workspace is None else f"{workspace}/package.json"
             add_error(
                 errors,
                 "command.package",
-                f"{label} references {program} but package.json scripts are unavailable.",
-                "Add package.json or correct the command.",
+                f"{label} references {program} but {where} scripts are unavailable.",
+                f"Add {where} or correct the command.",
             )
         elif script not in scripts:
             add_error(

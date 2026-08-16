@@ -1,9 +1,14 @@
 #!/usr/bin/env python3
 """Verify the prerequisites needed to work in this repository.
 
-This repository holds documentation only: there is nothing to install. Setup is
-therefore a check, not an installation, and it stays honest by failing when the
-one real prerequisite -- a supported Python interpreter -- is absent.
+Setup is a check, not an installation: the harness itself needs only a supported
+Python interpreter, and it stays honest by failing when that is absent.
+
+The two runtimes -- the gateway under gateway/ and the connector under connector/ --
+have their own dependencies and their own installers (npm --prefix <name> install).
+This script deliberately does not run them -- a documentation change should not
+require a package manager -- but it does report whether each has been installed, so a
+missing build is visible here rather than discovered at the first start command.
 """
 
 from __future__ import annotations
@@ -39,7 +44,17 @@ def main() -> int:
         return 1
 
     print(f"PASS: Python {sys.version.split()[0]} is supported.")
-    print("No dependencies to install: this repository contains documentation only.")
+    print("No dependencies to install for the harness itself.")
+
+    for label, package in (("Gateway", "gateway"), ("Connector", "connector")):
+        if (root / package / "node_modules").is_dir():
+            print(f"{label} runtime: dependencies installed.")
+        else:
+            print(
+                f"{label} runtime: not installed. "
+                f"Run 'npm --prefix {package} install' "
+                f"before 'npm --prefix {package} run build'."
+            )
     return 0
 
 

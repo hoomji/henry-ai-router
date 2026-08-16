@@ -16,7 +16,7 @@ knowledge_store:
   references: "docs/references/index.md"
 commands:
   setup: "python scripts/setup.py"
-  start: "unknown"
+  start: "npm --prefix gateway run start"
   check: "python scripts/harness-validate.py ."
   test: "python scripts/check.py"
   validate: "python scripts/harness-validate.py ."
@@ -27,9 +27,30 @@ capabilities:
       - "command: python scripts/setup.py"
       - "scripts/setup.py"
   startable_runtime:
-    status: "missing"
+    status: "verified"
     evidence:
-      - "ARCHITECTURE.md"
+      - "command: npm --prefix gateway run start"
+      - "command: npm --prefix gateway run stub"
+      - "gateway/src/server.ts"
+      - "docs/exec-plans/completed/2026-08-14-provider-risk-gateway-tracer.md"
+  # M2 added a control plane beside the data path: the target document, its management
+  # surfaces, and the authoritative per-workload status resource.
+  management_surface:
+    status: "verified"
+    evidence:
+      - "gateway/src/management/api.ts"
+      - "gateway/src/management/notify.ts"
+      - "gateway/src/targets/service.ts"
+      - "gateway/test/targetDocument.test.ts"
+      - "gateway/test/notify.test.ts"
+  # State survives a restart: the target document and the `unmet` counters are persisted,
+  # and the store is designed for concurrent writers rather than a single one.
+  durable_state:
+    status: "verified"
+    evidence:
+      - "gateway/src/targets/store.ts"
+      - "gateway/test/store.test.ts"
+      - "docs/adr/0002-durable-target-store-with-cross-process-concurrency.md"
   harness_contract_validation:
     status: "verified"
     evidence:
@@ -39,9 +60,88 @@ capabilities:
     evidence:
       - "command: python scripts/check.py"
   automated_tests:
+    status: "verified"
+    evidence:
+      - "command: npm --prefix gateway test"
+      - "gateway/test/failOpen.test.ts"
+      - "gateway/test/store.test.ts"
+      - "gateway/test/targetRouting.test.ts"
+      - "gateway/test/feasibility.test.ts"
+      - "gateway/test/stats.test.ts"
+      - "gateway/test/chooseProvider.test.ts"
+      - "command: npm --prefix connector test"
+      - "connector/test/call.test.ts"
+      - "connector/test/channel.test.ts"
+      - "connector/test/report.test.ts"
+      - "connector/test/streaming.test.ts"
+      - "gateway/test/controlPlane.test.ts"
+      - "gateway/test/rankedList.test.ts"
+      - "gateway/test/reservations.test.ts"
+      - "gateway/test/connectorMeasurement.test.ts"
+  # The gateway pushes ranked provider lists to connectors over SSE, records their
+  # acknowledgements, and falls back to polling when the stream is unavailable. The ranked
+  # list is derived by calling the pure `chooseProvider` repeatedly, so it cannot disagree
+  # with an in-path choice.
+  control_plane_push:
+    status: "verified"
+    evidence:
+      - "gateway/src/controlplane/api.ts"
+      - "gateway/src/controlplane/directives.ts"
+      - "gateway/src/controlplane/rankedList.ts"
+      - "gateway/test/controlPlane.test.ts"
+      - "gateway/test/rankedList.test.ts"
+  # The second runtime: the customer-installed component that calls providers directly, so
+  # the gateway is out of the request path in normal operation.
+  connector_runtime:
+    status: "verified"
+    evidence:
+      - "command: npm --prefix connector run build"
+      - "command: npm --prefix connector run sample"
+      - "command: npm --prefix connector test"
+      - "connector/src/call.ts"
+      - "connector/src/channel.ts"
+      - "connector/src/report.ts"
+      - "connector/src/headers.ts"
+      - "docs/exec-plans/completed/2026-08-15-connector-and-reservation-aware-routing.md"
+  # Behavior 4: a declared reservation, unaddressed-capacity reporting with its call-site
+  # cause, and a routing preference that is inert when no reservation is declared.
+  reservation_aware_routing:
+    status: "verified"
+    evidence:
+      - "gateway/src/reservations/document.ts"
+      - "gateway/src/reservations/unaddressed.ts"
+      - "gateway/test/reservations.test.ts"
+  # One command that starts the stubs, the gateway and the sample applications and drives
+  # seven checks. 7 of 7 passed on 2026-08-15. It is what caught the defect that unit tests
+  # could not see: connector-reported usage was never folded into the measurement windows,
+  # so with the gateway out of the request path the windows had no input at all. Check 7
+  # needed 160 in-path requests to reach `unmet` before the fix and 0 after.
+  connector_e2e_evidence:
+    status: "verified"
+    evidence:
+      - "command: npm --prefix gateway run e2e"
+      - "command: npm --prefix gateway run gateway:logged"
+      - "gateway/src/dev/e2e.ts"
+      - "gateway/src/controlplane/usageOutcome.ts"
+      - "gateway/test/connectorMeasurement.test.ts"
+  # The end-to-end demonstration that a target actually moves traffic: same providers,
+  # same traffic, two different targets, and the split moves with the target. Verified by
+  # running it, not by taking its author's word — four consecutive green runs on
+  # 2026-08-15, the last reporting a 39.5 percentage-point shift in the fast provider's
+  # share and blended cost moving $0.02776 -> $0.01670 between the two targets.
+  target_routing_load_evidence:
+    status: "verified"
+    evidence:
+      - "command: npm --prefix gateway run load"
+      - "gateway/src/dev/load.ts"
+      - "gateway/src/dev/simProvider.ts"
+  # Every check in this repository runs against simulated providers. Nothing here has been
+  # exercised against a real provider account, and no measured capability floor exists.
+  real_provider_verification:
     status: "missing"
     evidence:
-      - "ARCHITECTURE.md"
+      - "gateway/src/dev/simProvider.ts"
+      - "gateway/src/providers/capabilities.ts"
   continuous_integration:
     status: "missing"
     evidence:

@@ -1,0 +1,11 @@
+# Build output and installed packages. Each runtime's lockfile is committed; its
+# node_modules and compiled dist are not.
+gateway/node_modules/
+gateway/dist/
+connector/node_modules/
+connector/dist/
+
+# The target store is runtime state, created on first boot and never source.
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm

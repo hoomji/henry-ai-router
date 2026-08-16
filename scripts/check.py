@@ -14,7 +14,9 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-SKIPPED_DIRECTORIES = {".git"}
+# The gate reads only what this repository authors. Installed packages and build output
+# are neither ours to fix nor stable between checkouts.
+SKIPPED_DIRECTORIES = {".git", "node_modules", "dist"}
 LINK_PATTERN = re.compile(r"\[[^]]*\]\(([^)]+)\)")
 URL_PATTERN = re.compile(r"[A-Za-z][A-Za-z0-9+.-]*://")
 
