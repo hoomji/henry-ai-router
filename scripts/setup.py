@@ -4,11 +4,11 @@
 Setup is a check, not an installation: the harness itself needs only a supported
 Python interpreter, and it stays honest by failing when that is absent.
 
-The gateway runtime under gateway/ has its own dependencies and its own installer
-(npm --prefix gateway install). This script deliberately does not run it -- a
-documentation change should not require a package manager -- but it does report
-whether the runtime has been installed, so a missing build is visible here rather
-than discovered at the first start command.
+The two runtimes -- the gateway under gateway/ and the connector under connector/ --
+have their own dependencies and their own installers (npm --prefix <name> install).
+This script deliberately does not run them -- a documentation change should not
+require a package manager -- but it does report whether each has been installed, so a
+missing build is visible here rather than discovered at the first start command.
 """
 
 from __future__ import annotations
@@ -46,13 +46,15 @@ def main() -> int:
     print(f"PASS: Python {sys.version.split()[0]} is supported.")
     print("No dependencies to install for the harness itself.")
 
-    if (root / "gateway" / "node_modules").is_dir():
-        print("Gateway runtime: dependencies installed.")
-    else:
-        print(
-            "Gateway runtime: not installed. Run 'npm --prefix gateway install' "
-            "before 'npm --prefix gateway run build'."
-        )
+    for label, package in (("Gateway", "gateway"), ("Connector", "connector")):
+        if (root / package / "node_modules").is_dir():
+            print(f"{label} runtime: dependencies installed.")
+        else:
+            print(
+                f"{label} runtime: not installed. "
+                f"Run 'npm --prefix {package} install' "
+                f"before 'npm --prefix {package} run build'."
+            )
     return 0
 
 
