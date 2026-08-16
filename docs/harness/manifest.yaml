@@ -160,13 +160,16 @@ capabilities:
       - "gateway/test/inspect.test.ts"
   # Two jobs on push and pull request: the gate, and the end-to-end run separately so a
   # timing failure there is distinguishable from a broken test. The workflow shells out to
-  # `scripts/check.py` rather than restating its steps. Not `verified`: the workflow has
-  # never run on a remote at the time of writing, and no green run has been observed.
+  # `scripts/check.py` rather than restating its steps, so CI and a laptop cannot disagree
+  # about what passed. `verified` as of 2026-08-16: both jobs ran green on a GitHub runner on
+  # PR #15 — gate in 21s, end-to-end in 3m57s with 7/7 checks — which is the first proof that
+  # these commands work off the machine they were written on.
   continuous_integration:
-    status: "executable"
+    status: "verified"
     evidence:
       - ".github/workflows/gate.yml"
       - "command: python scripts/check.py"
+      - "command: python scripts/check.py --e2e"
 # Only rules a command actually enforces belong here. A policy nobody can fail is a wish,
 # and a manifest full of wishes is how a harness stops being evidence.
 policies:
