@@ -20,6 +20,23 @@ function close(server: Server): Promise<void> {
   return new Promise((resolveClosed) => server.close(() => resolveClosed()));
 }
 
+/**
+ * The M1 shape: a gateway with no target apparatus at all.
+ *
+ * `service: null` is what these tests are about. The fail-open boundary belongs to the
+ * forwarding path, so it must hold whether or not a customer has ever stated a target —
+ * proven here with no store, no document, and no measurement window in the picture.
+ */
+function tracer(upstreamBaseUrl: string, forceRouterError = false): Server {
+  return createGateway(
+    loadConfig({
+      UPSTREAM_BASE_URL: upstreamBaseUrl,
+      ...(forceRouterError ? { FORCE_ROUTER_ERROR: "1" } : {}),
+    }),
+    { service: null },
+  );
+}
+
 function post(port: number, path = "/v1/chat/completions"): Promise<Response> {
   return fetch(`http://127.0.0.1:${port}${path}`, {
     method: "POST",
@@ -42,11 +59,7 @@ describe("the tracer's forwarding path", () => {
   });
 
   it("forwards a chat completion and returns the upstream response unchanged", async () => {
-    const gateway = createGateway({
-      upstreamBaseUrl,
-      port: 0,
-      forceRouterError: false,
-    });
+    const gateway = tracer(upstreamBaseUrl);
     const port = await listen(gateway);
 
     try {
@@ -67,11 +80,7 @@ describe("the tracer's forwarding path", () => {
   });
 
   it("still returns the upstream response when the routing seam fails", async () => {
-    const gateway = createGateway({
-      upstreamBaseUrl,
-      port: 0,
-      forceRouterError: true,
-    });
+    const gateway = tracer(upstreamBaseUrl, true);
     const port = await listen(gateway);
 
     try {
@@ -89,11 +98,7 @@ describe("the tracer's forwarding path", () => {
     const deadPort = await listen(dead);
     await close(dead);
 
-    const gateway = createGateway({
-      upstreamBaseUrl: `http://127.0.0.1:${deadPort}`,
-      port: 0,
-      forceRouterError: false,
-    });
+    const gateway = tracer(`http://127.0.0.1:${deadPort}`);
     const port = await listen(gateway);
 
     try {
@@ -105,11 +110,7 @@ describe("the tracer's forwarding path", () => {
   });
 
   it("does not answer paths outside the one endpoint this plan exposes", async () => {
-    const gateway = createGateway({
-      upstreamBaseUrl,
-      port: 0,
-      forceRouterError: false,
-    });
+    const gateway = tracer(upstreamBaseUrl);
     const port = await listen(gateway);
 
     try {
@@ -125,8 +126,19 @@ describe("the routing seam", () => {
   const request = { method: "POST", path: "/v1/chat/completions", headers: {}, body: "" };
 
   it("returns the sole upstream with no rejections", () => {
-    const provider = { id: "passthrough", baseUrl: "http://example.invalid" };
-    const decision = chooseProvider(request, { providers: [provider] });
+    const provider = {
+      id: "passthrough",
+      baseUrl: "http://example.invalid",
+      model: "passthrough",
+      host: "upstream",
+      region: "local",
+      serviceTier: "standard",
+    };
+    const decision = chooseProvider(request, {
+      providers: [provider],
+      observations: {},
+      workload: null,
+    });
 
     assert.deepEqual(decision.provider, provider);
     assert.equal(decision.boundBy, null);
@@ -135,7 +147,9 @@ describe("the routing seam", () => {
 
   it("throws rather than inventing a fallback when there is no candidate", () => {
     // The fail-open wrapper owns the fallback; this function owns only the decision.
-    assert.throws(() => chooseProvider(request, { providers: [] }));
+    assert.throws(() =>
+      chooseProvider(request, { providers: [], observations: {}, workload: null }),
+    );
   });
 });
 

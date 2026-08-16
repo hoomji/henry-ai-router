@@ -29,15 +29,57 @@ below; no milestone is spent deciding them.
       `npm --prefix gateway test` passes 9 tests, and the curl transcript in *Artifacts and
       Notes* shows both the normal response and the fail-open header. `AGENTS.md`,
       `ARCHITECTURE.md`, and `docs/harness/manifest.yaml` no longer deny a runtime exists.
-- [ ] Implement target-state routing against simulated providers, decision surface and
+- [x] Implement target-state routing against simulated providers, decision surface and
       HTTP surfaces both (M2).
+      2026-08-15 — Done and verified. All eight of M2's work items landed: the target
+      document and its closed vocabulary (`targets/document.ts`), rolling measurement
+      windows merged across processes (`routing/stats.ts`), target-state routing with
+      relaxation and a binding reason (`routing/chooseProvider.ts`),
+      `infeasible_by_declaration` against a provenance-tiered capability catalogue
+      (`providers/capabilities.ts`, `targets/feasibility.ts`), the two-window `unmet` state
+      machine (`targets/unmet.ts`), the four delivery surfaces (`management/api.ts`,
+      `management/notify.ts`, plus the two headers in `server.ts`), the durable SQLite store
+      with cross-process compare-and-set (`targets/store.ts`), and the load script
+      (`dev/simProvider.ts`, `dev/load.ts`). `npm --prefix gateway test` passes 132 tests;
+      `npm --prefix gateway run load` passes three consecutive runs; `python
+      scripts/check.py` passes 3 of 3. The completion criterion and all six verification
+      steps have named artifacts in *Artifacts and Notes*.
 
 Add a timestamped entry at every stopping point. This checklist must state the actual
 state of the work, not the originally intended sequence.
 
 ## Surprises & Discoveries
 
-None yet.
+- 2026-08-15 — **A routing engine that only picks what it has already measured cannot
+  discover anything.** M2's first load run sent 100% of traffic to one provider under
+  *both* a latency target and a cost target, and the load script correctly refused to call
+  that evidence. The cause was a feedback loop rather than a bug in any one module: at cold
+  start every provider reports `insufficient_data`, the tie-break picked the
+  lexicographically first provider, that provider accumulated samples and became measured,
+  and the other received zero requests — so it stayed unmeasured, and therefore unchosen,
+  forever. A provider that is never chosen can never be measured, and a provider that can
+  never be measured can never be chosen. The fix is recorded in the Decision Log; the
+  reason it is recorded rather than quietly patched is that "prefer the provider we have
+  measured" looks locally sensible and is globally self-defeating, so a future reader will
+  be tempted to reintroduce it.
+- 2026-08-15 — **The measurement window answers two different questions and needs two
+  different lookbacks.** Judging the `unmet` state over a trailing multi-window merge
+  breaks the deliberate symmetry of the two-window exit, because a recovered workload keeps
+  being judged on the windows it already recovered from. Judging the *data path* over a
+  single closed window is equally wrong in the other direction: the evidence evaporates
+  moments after it is gathered, every provider falls back to `insufficient_data`, and
+  exploration re-triggers on traffic that was just measured. `targets/service.ts` now
+  computes both and uses each where it belongs.
+- 2026-08-15 — **A capability floor for a simulated provider must not decay.** The floors
+  carry a provenance and a TTL, which is right for a measured floor on a real provider. The
+  simulated providers inherited the same six-hour TTL, so two weeks after the catalogue's
+  epoch every sim floor was stale, the declaration-time check abstained on everything, and
+  `infeasible_by_declaration` could only ever fire inside tests pinned to that epoch. The
+  sim entries are now exempt from decay while the real-model entries keep realistic TTLs —
+  which is what keeps *both* the rejection path and the abstention path demonstrable.
+- 2026-08-15 — The load script earned its keep by failing. It caught both the cold-start
+  trap and a later run-to-run flip in the split direction, and neither would have been
+  visible from the test suite, which was fully green throughout.
 
 ## Decision Log
 
@@ -156,9 +198,107 @@ None yet.
   rather than waved through because the plan asked for any dependency to be argued.
   Date/Author: 2026-08-15 / Claude (M1 implementation)
 
+- Decision: Among candidates that satisfy every stated ceiling, a provider whose
+  *objective* dimension is `insufficient_data` is preferred over one with a measured value.
+  Rationale: the opposite rule — prefer what we have measured — makes the engine unable to
+  discover anything, because a provider that is never chosen never accumulates the samples
+  that would let it be chosen. Gathering the evidence *is* the objective while the evidence
+  does not exist. The cost is bounded and self-terminating: once a provider clears the
+  sample floor it competes on merit, so exploration costs at most one sample floor of
+  requests per provider per window rather than a standing tax. The visible consequence is
+  that a split is never 100/0 — a small residual share keeps checking whether our own
+  measurements are still true — and the load script says so in its output rather than
+  leaving a reader to mistake it for a defect.
+  Date/Author: 2026-08-15 / Claude (M2 implementation), after the load script falsified the
+  previous rule
+
+- Decision: A workload's `objective` may name a dimension it states no ceiling for.
+  Rationale: the spec lists the objective as its own element of a target, separate from the
+  dimensions, and "hold p95 under 900 ms and minimize cost" is the canonical target rather
+  than an edge case — requiring the objective to also be a stated ceiling would force a
+  customer to invent a ceiling for the very quantity they are asking the gateway to
+  minimize. The vocabulary stays closed: an objective outside the three dimensions is still
+  rejected. `priority` remains a permutation of the *stated* dimensions and `hard` must
+  still be one of them, because only a stated ceiling can yield or be breached.
+  Date/Author: 2026-08-15 / Claude (M2 implementation)
+
+- Decision: `targets/service.ts` exists, and is not in the design doc's proposed layout.
+  Rationale: something has to own the store handle, the in-memory document copy and its
+  polling refresh, the rolling windows, and the `unmet` machine, and both the data path and
+  the management surfaces need it. It lives under `targets/` rather than `management/`
+  because nothing under `targets/` may import `management/`, which is also why it delivers
+  notifications through an injected callback instead of importing `management/notify.ts`.
+  The dependency rule points one way and a convenience import would have been the first
+  crack in it.
+  Date/Author: 2026-08-15 / Claude (M2 implementation)
+
+- Decision: Capability floors for the simulated providers do not expire; floors for real
+  models keep realistic TTLs.
+  Rationale: a floor's TTL models the decay of a *measurement*, and a simulator's
+  characteristics do not decay. With a shared six-hour TTL every sim floor was stale within
+  a day of the catalogue's epoch, the declaration-time check abstained on everything, and
+  `infeasible_by_declaration` became unreachable outside tests pinned to that epoch. Keeping
+  real-model TTLs realistic is what keeps the abstention path demonstrable, so the catalogue
+  now exercises both halves of the spec's requirement rather than collapsing into one.
+  Date/Author: 2026-08-15 / Claude (M2 implementation)
+
+- Decision: The data path and the `unmet` state machine read the measurement store over
+  different lookbacks — a trailing three windows for what routing and the status resource
+  report, and only the window that just closed for the state machine's verdict.
+  Rationale: they answer different questions. The spec's window is "5 minutes or 200
+  requests, whichever spans longer", so a trailing merge is what the reported measurement
+  means; but folding several windows into the *verdict* would keep judging a recovered
+  workload on the windows it recovered from and break the deliberate symmetry of two windows
+  in, two windows out.
+  Date/Author: 2026-08-15 / Claude (M2 implementation)
+
 ## Outcomes & Retrospective
 
-Not started.
+2026-08-15 — Both milestones are complete. A person can start the gateway, watch a request
+be forwarded, watch it still be forwarded when routing is broken, state a target over a
+workload, and watch the provider mix move because of that target and nothing else.
+
+What this plan does **not** entitle anyone to claim:
+
+- **Behavior 1 is not shippable to a customer.** M2 delivers its decision engine. Reaching a
+  customer means the connector pushing a ranked list, which is the successor plan's work
+  ([`2026-08-15-connector-and-reservation-aware-routing.md`](2026-08-15-connector-and-reservation-aware-routing.md)).
+- **All proof is simulated.** Two stub providers with injected latency and cost. No provider
+  credentials, no deployment target, no real-provider run. The capability catalogue's
+  realistic entries are plausible numbers, not measurements.
+- **The repository gate is not runtime evidence.** `python scripts/check.py` validates
+  setup, harness consistency, and Markdown links. The gateway's own suite is a separate
+  command, and there is still no CI running either.
+- **The `success_rate` dimension is measured but never exercised end to end.** It is
+  classified correctly on the data path and honored by routing, and the simulated providers
+  can inject errors, but no verification artifact drives a workload to breach it. The two
+  dimensions with named artifacts are `p95_ms` and `cost_per_1k_tokens_usd`.
+- **Internal retries and failovers do not exist yet.** `success_rate` is defined as the
+  share of requests that got a usable response *after* all internal retries and failovers,
+  and the classification honors that definition — but M2 performs no retry, so today the
+  definition and the behavior coincide only because there is nothing to absorb. When retry
+  lands, the measurement is already the right shape.
+
+What went well, and is worth repeating: the load script was written to exit non-zero when
+its own claim fails, and it caught two real defects — a cold-start feedback loop that made
+target-state routing inert, and a lookback choice that made the status resource report
+`insufficient_data` for a workload that had just served traffic. Neither was visible to the
+test suite, which was green throughout. An artifact that cannot fail is not evidence.
+
+One harness observation worth keeping, because retiring a plan will happen again: moving
+this file from `active/` to `completed/` broke references of two different kinds, caught by
+two different checkers. The Markdown links were caught by the link checker; a stale pointer
+in a YAML evidence field in `docs/harness/manifest.yaml` was invisible to it and was caught
+only by `harness-validate`. The link check passed while the gate failed. Completing a plan
+therefore means running the *full* gate, not the link check, and `grep -rn "exec-plans/active/"`
+across both `.md` and `.yaml` is the cheap sweep that finds the rest.
+
+The escalation trigger this milestone carried — oscillation of the split above 20% between
+consecutive windows forcing a redesign before damping — was not hit. The observed movement
+is exploration on an unmeasured provider, which is bounded by the sample floor and
+self-terminating, not an unstable control loop. If a future run shows the split swinging
+between consecutive windows on providers that are *both* measured, that is the trigger and
+it needs the redesign, not a damping term.
 
 ## Context and Orientation
 
@@ -447,9 +587,18 @@ work proceeds):
     python scripts/harness-validate.py .
     python scripts/check.py
 
-M1's start command and M2's load command are recorded in their milestones once the
-implementation exists; the start and test commands must also land in `AGENTS.md`'s command
-list and in `docs/harness/manifest.yaml`.
+Actually run, 2026-08-15, all passing:
+
+    npm --prefix gateway install
+    npm --prefix gateway run build
+    npm --prefix gateway test          # 132 tests, 35 suites, 0 fail
+    npm --prefix gateway run load      # M2's evidence artifact; exits non-zero on a flat split
+    python scripts/harness-validate.py .
+    python scripts/check.py            # PASS: repository gate (3 of 3)
+
+M1's start command and M2's load command are recorded in their milestones; the start, test,
+and load commands also land in `AGENTS.md`'s command list and in
+`docs/harness/manifest.yaml`.
 
 ## Validation and Acceptance
 
@@ -499,7 +648,68 @@ upstream, and the header says so on the response rather than only in a log.
 routing seam, `502` on an unreachable upstream, `404` outside the one endpoint, the routing
 seam's decision and its refusal to invent a fallback, and three configuration cases.
 
-M2's load-script output belongs here when produced.
+**M2 load-script artifact — 2026-08-15, Node v24.18.0.** `npm --prefix gateway run load`.
+Two simulated providers, no provider credentials, no routing rule configured anywhere. The
+script warms up until both providers have genuinely closed a measurement window, measures
+200 requests, and exits non-zero unless the split moves *and moves in the right direction*.
+Three consecutive runs passed with the same direction.
+
+    DEMO window settings — NOT production defaults (300000ms / 200 req / floor 20):
+    GATEWAY_WINDOW_MS             1000
+    GATEWAY_WINDOW_MIN_REQUESTS   8
+    GATEWAY_SAMPLE_FLOOR          5
+
+    RUN A — workload "default" targets p95_ms (latency)
+    warmup for "default": 80 requests until both providers were measured
+    provider      requests    share    p95 ms
+    sim-a              184    92.0%       188
+    sim-b               16     8.0%       818
+
+    RUN B — workload "default" targets cost_per_1k_tokens_usd (cost)
+    provider      requests    share    p95 ms
+    sim-a               85    42.5%       189
+    sim-b              115    57.5%       826
+
+    THE CLAIM — same providers, same traffic, different target
+    run     default target                   sim-a share   sim-b share   blended $/1k
+    A       p95_ms                                 92.0%          8.0%       $0.02776
+    B       cost_per_1k_tokens_usd                 42.5%         57.5%       $0.01390
+
+    blended cost per 1k tokens: run A $0.02776 -> run B $0.01390 (-49.9%)
+    shift in sim-a's share between the runs: 49.5 percentage points
+
+    PASS: under the latency target the fast provider holds the larger share and the
+    blended cost is higher; under the cost target both move the other way.
+
+The residual 8% on the slow provider under a latency target is not leakage: routing keeps
+sampling a provider it has not measured recently, because a provider that is never chosen
+can never be measured (see *Surprises & Discoveries*).
+
+**M2's named verification artifacts.** All six of the milestone's verification steps are
+executable checks in `gateway/test/targetRouting.test.ts`, one `describe` per step, run by
+`npm --prefix gateway test`:
+
+- `422` naming the best achievable value, the provider achieving it, and the floor's
+  provenance and age — `PUT` of `p95_ms: 1` against a catalogue whose fastest allowed model
+  floors at 120 ms. A companion check proves a target *inside* the floor's variance is
+  accepted, which is the spec's "rejection is biased against itself" rule.
+- `409` on the second of two writes at the same version, with the current version returned
+  and the losing write provably not applied.
+- `unmet` raised only on the second consecutive missed window and cleared only on the
+  second consecutive held window, with the status resource carrying the dimension, the
+  target, and the observed value.
+- `unmet` surviving a process restart with its binding reason intact, reporting
+  `insufficient_data` for its dimensions until the window refills, and firing no duplicate
+  entry notification. This is the criterion [#13](https://github.com/hoomji/henry-ai-router/issues/13) exists to produce.
+- `unmet` still reported by the status resource when the notification endpoint refuses
+  connections and delivery is dropped — the guarantee that makes dropping acceptable.
+- A second workload named by `x-gateway-workload` routing differently from `default` in the
+  same run, off the same measurement snapshot.
+
+**Test and gate output — 2026-08-15.** `npm --prefix gateway test`: 132 tests, 35 suites,
+132 pass, 0 fail. `python scripts/check.py`: `PASS: repository gate (3 of 3)`. Note that the
+repository gate covers setup, harness consistency, and Markdown links only — it does not run
+the gateway's tests, so a passing gate is not by itself evidence that the runtime works.
 
 ## Interfaces and Dependencies
 
@@ -529,6 +739,17 @@ M2's load-script output belongs here when produced.
   harness scripts are unaffected and remain the validation and gate entrypoints.
 
 ## Revision Note
+
+2026-08-15 — M2 implemented and verified; the plan's checklist, artifacts, and retrospective
+now state the delivered state rather than the intended one. Five Decision Log entries were
+added for choices the implementation forced: the objective need not be a stated ceiling, an
+unmeasured provider is explored ahead of a measured one, `targets/service.ts` exists outside
+the design doc's proposed layout, simulated capability floors do not decay, and the data path
+and the `unmet` machine read the store over different lookbacks. Four entries were added to
+*Surprises & Discoveries*, the most consequential being the cold-start feedback loop that
+made target-state routing inert until the exploration rule was inverted. The retrospective
+states plainly what this plan does not entitle anyone to claim — behavior 1 is still not
+shippable without the connector, and every result here is against simulated providers.
 
 2026-08-15 — Recorded the behavior sequence resolved by grilling ticket
 [#8](https://github.com/hoomji/henry-ai-router/issues/8). No milestone work changed: M1 and
