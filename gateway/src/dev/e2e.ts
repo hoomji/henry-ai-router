@@ -15,7 +15,7 @@ import type { E2eStub } from "./e2eStub.js";
 /**
  * The end-to-end verification for M1: the gateway out of the request path.
  *
- * Everything in `docs/exec-plans/active/2026-08-15-connector-and-reservation-aware-routing.md`
+ * Everything in `docs/exec-plans/completed/2026-08-15-connector-and-reservation-aware-routing.md`
  * under M1's *Verification* is driven here against real processes — two stub upstreams in
  * this process, the gateway as a child process (so it can be killed), and the sample
  * application as child processes (so it can be watched surviving that). Each check prints

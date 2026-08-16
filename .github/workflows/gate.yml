@@ -1,0 +1,79 @@
+# The repository gate, run by machine.
+#
+# Both jobs shell out to `scripts/check.py`. The temptation with a CI file is to spell the
+# steps out here — install, build, test, link-check — but then CI and the local gate are two
+# definitions of "green" that drift, and the one an agent runs before handing work over is
+# the one that stops being authoritative. Anything worth enforcing goes into
+# `scripts/check.py` rather than into this file.
+#
+# Two jobs rather than one `--e2e` run, because the two failures mean different things. The
+# gate is deterministic; the end-to-end run starts processes, binds ports and waits on
+# timings, so it can fail for reasons that are about the runner rather than the change.
+# Separating them means a red end-to-end job next to a green gate reads as "look at the
+# timing", not as "the code is broken".
+#
+# Nothing here needs a credential. Every check runs against simulated providers on localhost.
+
+name: gate
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+# A second push to the same branch makes the first run's answer irrelevant.
+concurrency:
+  group: gate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      # Node 24 is not a preference: the target store uses `node:sqlite`, which does not
+      # exist before it, and both runtimes declare `"engines": {"node": ">=24"}`.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # `scripts/setup.py` deliberately verifies prerequisites rather than installing them —
+      # a documentation change should not require a package manager — so the two runtime
+      # installs are the one thing this file has to do that the gate does not. `npm ci`
+      # rather than `npm install` because both lockfiles are committed and a runner that
+      # silently resolved a different tree would be testing something the laptop is not.
+      - name: Install runtime dependencies
+        run: |
+          npm --prefix gateway ci
+          npm --prefix connector ci
+
+      - name: Repository gate
+        run: python scripts/check.py
+
+  end-to-end:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install runtime dependencies
+        run: |
+          npm --prefix gateway ci
+          npm --prefix connector ci
+
+      # The only check that has ever caught a defect the unit tests could not see: with the
+      # gateway out of the request path, connector-reported usage was never folded into the
+      # measurement windows, so the windows had no input at all
+      # (docs/harness/learning-ledger.md).
+      - name: End-to-end run
+        run: python scripts/check.py --e2e
