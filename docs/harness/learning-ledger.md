@@ -6,6 +6,31 @@ Record repeated friction only when it can improve a durable repository capabilit
 
 Newest first.
 
+### 2026-08-16 — CI was declared as capability before it had ever run
+
+- Date: 2026-08-16
+- Observed friction: `.github/workflows/gate.yml` was added and three planes' evidence began
+  to lean on it while it had never executed once. The manifest was honest about this —
+  `executable`, with the reason written out — but the pull to record a workflow's *existence*
+  as a working capability is exactly how a manifest turns from evidence into aspiration.
+- Frequency and impact: first occurrence in this repository, and the class is the one the
+  manifest exists to prevent. Low impact here precisely because it was declared honestly.
+- Missing harness plane: execution — no proof the commands worked off the machine that wrote
+  them.
+- Chosen durable layer: none new. The durable answer was to *run it* and then re-verify,
+  which is the rule the manifest already encodes: `verified` requires an observation, not an
+  artifact.
+- Change or decision not to encode: `continuous_integration` moved `executable` → `verified`
+  only after PR #15 showed both jobs green on a runner. Deliberately not encoded: a check that
+  a workflow file has a recorded run. The manifest's status vocabulary already carries that
+  distinction, and a script re-deriving it from the GitHub API would need a network call
+  inside a gate that is offline by design.
+- Owner: henry.tran@uniblock.dev
+- Closure evidence: PR #15 — `gate` green in 21s, `end-to-end` green in 3m57s with 7/7 checks.
+  Execution moved 3→4 on that evidence, and Policy deliberately did not: branch protection is
+  unavailable on this repository's plan, so a red run still does not block a merge.
+- Review date: 2026-11-16
+
 ### 2026-08-16 — the control plane's decision was only observable by standing up a server
 
 - Date: 2026-08-16
