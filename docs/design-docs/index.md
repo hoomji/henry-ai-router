@@ -13,7 +13,7 @@ Verification status vocabulary:
 | Document | Scope | State | Owner | Last verified | Evidence |
 |---|---|---|---|---|---|
 | [Core beliefs](core-beliefs.md) | Agent-first operating principles | Proposed | henry.tran@uniblock.dev | Unverified | None |
-| [Gateway design](gateway-design.md) | Module layout, adapter contract, routing seam, fail-open path, target and management surfaces, config surface for `gateway/` | Partially verified | henry.tran@uniblock.dev | 2026-08-15 (M1 only) | M1 tree, dependency rule, adapter contract, fail-open transcript |
+| [Gateway design](gateway-design.md) | Module layout, adapter contract, routing seam, fail-open path, target, management, control-plane and reservation surfaces, config surface for `gateway/`, and the `connector/` sibling runtime | Verified | henry.tran@uniblock.dev | 2026-08-15 (connector/reservation tree) | Tree matches layout including `controlplane/` and `reservations/`, dependency rule and its two declared concessions, populated binding reason, `chooseProvider` signature and purity preserved, `npm --prefix gateway run e2e` 7 of 7, 203 gateway tests and 32 connector tests |
 
 ## Entry contract
 

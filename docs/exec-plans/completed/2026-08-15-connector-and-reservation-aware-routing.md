@@ -31,17 +31,78 @@ no cloud account are needed at any point in this plan.
 
 ## Progress
 
-- [ ] M1 — the connector: direct provider calls, pushed ordered lists, acknowledgement,
+- [x] M1 — the connector: direct provider calls, pushed ordered lists, acknowledgement,
       token reporting, streamed pass-through, and customer authentication.
-- [ ] M2 — reservation-aware routing (product specification behavior 4): a declared
+- [x] M2 — reservation-aware routing (product specification behavior 4): a declared
       reservation, unaddressed-capacity reporting, and routing preference onto it.
 
 Add a timestamped entry at every stopping point. This checklist must state the actual state
 of the work, not the originally intended sequence.
 
+2026-08-15 — M1 complete. `connector/` exists at the repository root as a second TypeScript
+package with zero runtime dependencies beyond the Node standard library: `call.ts` (direct
+provider calls, holding the single retry-the-next-provider rule, with a statically configured
+fallback provider used before any list arrives, and streams relayed rather than buffered),
+`channel.ts` (Server-Sent Events with exponential backoff to roughly thirty seconds and a
+thirty-second polling fallback while disconnected), `report.ts` (batching every ten seconds or
+hundred records, over two bounded buffers — usage drops oldest first, strain sheds by sampling
+and records its own drop rate), `headers.ts` (writing `x-gateway-target-unmet`), and
+`dev/sampleApp.ts`. On the gateway side `controlplane/` holds `rankedList.ts` (pure; it derives
+a total order by calling the existing pure `chooseProvider` repeatedly, so the ranked list and
+an in-path choice come from one function), `directives.ts` (the push scheduler, debounced to one
+push per workload per second) and `api.ts` (the SSE stream, ack, lists, usage, and admin mint).
+The store gained real per-customer scoping through a `forCustomer()` view that replaces the
+hardcoded `CUSTOMER_ID`, plus `connectors`, `connector_directive` and `connector_usage` tables.
+
+2026-08-15 — M2 complete. `gateway/src/reservations/` holds `document.ts` and `unaddressed.ts`;
+`GET`/`PUT /v1/reservations` is versioned with the same optimistic concurrency as the target
+document and answers `409` on a stale version; utilization is computed from the connector's own
+usage reports rather than from the provider; unaddressed capacity is reported with the call-site
+cause named; and `chooseProvider` gained a reservation preference that is inert when a customer
+has declared no reservations. `chooseProvider` kept its exact signature and stayed pure: term
+liveness is resolved by the caller into `state.liveReservations`, so no clock is read inside the
+seam.
+
+2026-08-15 — Verification run. `npm --prefix gateway test` 203 tests across 61 suites, all
+passing; `npm --prefix connector test` 32 tests across 11 suites, all passing;
+`npm --prefix gateway run e2e` 7 of 7 checks passing; `py scripts/harness-validate.py .` passing
+with zero warnings; `py scripts/check.py` passing 3 of 3. Everything runs against stub providers
+on localhost. Nothing has been exercised against a real provider or deployed anywhere.
+
 ## Surprises & Discoveries
 
-None yet.
+**Connector-reported usage never reached the measurement windows, and no unit test could see
+it.** The connector's usage reports were persisted to the new `connector_usage` table for
+billing, and stopped there. They were never folded into the rolling measurement windows that
+`routing/stats.ts` maintains. Taken with this plan's central architectural fact — that the
+gateway is out of the request path in normal operation — that meant the windows had **no input
+at all** once a connector was installed. Every provider stayed `insufficient_data` forever, the
+ranked list could never reorder on observed behavior, and `unmet` was unreachable except by
+driving the gateway's own in-path data path, which in production carries nothing. The whole of
+behavior 1 was intact in the code and dead in operation.
+
+It was invisible to unit tests for a structural reason worth remembering: every existing test of
+`unmet` reached the windows through the *in-path* data path, because that was the only path that
+existed when those tests were written. Each one passed. The defect lived precisely in the gap
+between two paths that each had coverage — the report path wrote its table correctly and the
+window path measured correctly; nothing tested that one fed the other. It surfaced only when the
+end-to-end run tried to reach `unmet` the way a customer would, with the gateway out of the path.
+
+The fix: a new pure module `gateway/src/controlplane/usageOutcome.ts` maps a reported call to a
+`RequestOutcome`, and `controlplane/api.ts` folds each one into the windows at ingestion. Three
+details of that mapping are traps rather than plumbing. A shared `classifyStatus` now lives in
+`routing/stats.ts` and is used by both `server.ts` and the connector-report path, so the two
+classifications cannot drift; it treats the connector's `statusCode: 0` transport-failure
+encoding as provider risk rather than as success, the trap being that `0 < 400`. Records naming
+a provider with no catalogue entry are dropped as unpriceable rather than priced at zero,
+because a zero rate is indistinguishable from free capacity and would drag a cost measurement
+toward it. And only the service's own customer is folded in, because the windows are keyed by
+(workload, provider) and know nothing about customers — mixing them would silently average one
+customer's providers into another customer's target.
+
+Evidence the fix is real, rather than a plausible-looking change: check 7 of the end-to-end run
+previously needed 160 in-path requests to drive the workload into `unmet` and now reaches it
+with zero, and the two new integration tests were confirmed to fail when the fix is reverted.
 
 ## Decision Log
 
@@ -122,9 +183,69 @@ None yet.
   and disclosure remain with behavior 3; this adds fields and a buffer, not a milestone.
   Date/Author: 2026-08-15 / henry.tran@uniblock.dev (confirmed), recorded by Claude
 
+- Decision: Connector-reported usage feeds the rolling measurement windows, not only the
+  billing table. A shared `classifyStatus` in `routing/stats.ts` is used by both the in-path
+  data path and the connector-report path, and a record naming a provider with no capability
+  catalogue entry is dropped as unpriceable rather than priced at zero.
+  Rationale: With the gateway out of the request path, connector reports are the *only* input
+  the windows can have; persisting them for billing alone left every provider permanently
+  `insufficient_data` and made `unmet` unreachable in operation. One shared classifier because
+  two implementations of "was this call provider risk?" would drift, and the connector's
+  transport-failure encoding `statusCode: 0` classifies as success under any naive `< 400`
+  test. Dropping unpriceable records because a zero rate is indistinguishable from free
+  capacity and would silently pull a cost measurement toward zero. Recorded in full under
+  *Surprises & Discoveries* above.
+  Date/Author: 2026-08-15 / implemented by Claude
+
+- Decision: Only the service's own customer's reports are folded into the measurement windows.
+  Per-customer measurement is deferred with behavior 3's cohort work.
+  Rationale: The windows are keyed by (workload, provider) and carry no customer dimension, so
+  folding several customers into them would silently average one customer's providers into
+  another customer's target — a wrong routing decision with no visible symptom. Adding that
+  dimension is the same data-model change behavior 3's cohort membership needs, and this plan's
+  Decision Log already keeps cohort multi-tenancy out of scope. Scoping to one customer is the
+  narrow choice that is correct today and does not pre-empt that design.
+  Date/Author: 2026-08-15 / implemented by Claude
+
+- Decision: The ranked list's total order is derived by calling `chooseProvider` repeatedly
+  rather than by a comparator or a second ordering routine, and `chooseProvider` keeps its exact
+  signature and purity — reservation term liveness is resolved by the caller into
+  `state.liveReservations`.
+  Rationale: A comparator would be a second implementation of the routing decision, which is the
+  thing ADR [`0006`](../../adr/0006-routing-authority-stays-gateway-side.md) exists to prevent;
+  deriving the order from repeated calls means the pushed list and any in-path choice cannot
+  disagree, and the binding reason stays authoritative. Resolving liveness in the caller keeps
+  the clock out of the seam, so the function remains testable without freezing time and the
+  purity claim the portability argument rests on stays true.
+  Date/Author: 2026-08-15 / implemented by Claude
+
 ## Outcomes & Retrospective
 
-Not started.
+Both milestones are complete and the plan's acceptance evidence exists. The gateway is now a
+control plane rather than a proxy: a sample application wired to the connector calls stub
+providers directly, the gateway's access log shows no chat-completion request at all, and a
+target change reaches the connector within five seconds as a pushed ranked list that the
+connector acknowledges. Behavior 4 is delivered on top — a declared reservation that traffic
+ignores is reported as unaddressed with its call-site cause, and eligible traffic then moves
+onto it without the calling application changing.
+
+What was achieved beyond the plan as written is the measurement fix recorded under *Surprises &
+Discoveries*. It is the plan's most valuable finding and the one a future reader should take
+away: moving the gateway out of the request path silently removed the only input its measurement
+windows had, and the existing test suite could not see it because every test of `unmet` reached
+the windows through the path that was being retired. The general lesson is that when an
+architecture change relocates a data path, the tests that exercise the old path keep passing and
+stop meaning anything; an end-to-end run driven the way a customer drives it is what caught it,
+and check 7's cost — 160 in-path requests before, zero after — is the measurement of how dead
+the path had been.
+
+What remains is unchanged from the plan's scope. Behaviors 2, 3 and 5 stay unclaimed, with their
+deferrals recorded in the product specification's *Behavior sequence and deferrals* section. The
+adapter contract's chunk transform stays deferred behind behavior 2. Cohort multi-tenancy, and
+with it per-customer measurement windows, stays deferred behind behavior 3. And the honest limit
+on all of this evidence is that everything runs against stub providers on localhost: no provider
+credential, no cloud account, nothing deployed, no capability floor measured against a real
+provider.
 
 ## Context and Orientation
 
@@ -132,7 +253,7 @@ Not started.
 
 This repository (`henry-ai-router`) holds a product specification and, once its predecessor
 plan is executed, a runnable gateway. That predecessor is
-[`2026-08-14-provider-risk-gateway-tracer.md`](2026-08-14-provider-risk-gateway-tracer.md)
+[`2026-08-14-provider-risk-gateway-tracer.md`](../completed/2026-08-14-provider-risk-gateway-tracer.md)
 in this same directory; it is checked in and incorporated here by reference. **Do not start
 this plan until that one is complete.** What it leaves behind, and what the steps below
 assume:
@@ -374,7 +495,7 @@ with that token. Then, each producing its named artifact under *Artifacts and No
   application's responses now carry `x-gateway-target-unmet` — written by the connector, on a
   response the gateway never saw.
 
-Then run `python scripts/harness-validate.py .` and `python scripts/check.py`, and update
+Then run `py scripts/harness-validate.py .` and `py scripts/check.py`, and update
 `AGENTS.md`'s command list and `docs/harness/manifest.yaml` with the connector's build,
 start, and test commands.
 
@@ -461,7 +582,7 @@ artifact:
 - Confirm the gateway holds no provider credential anywhere in its configuration or store at
   the end of the run.
 
-Then run `python scripts/check.py`.
+Then run `py scripts/check.py`.
 
 Rollback and recovery: additive — new endpoints, a new table, and a branch inside
 `chooseProvider` that is inert when a customer has declared no reservations. Revert to
@@ -476,22 +597,28 @@ question and is owned by the specification, not by this plan.
 
 ## Concrete Steps
 
-Planned commands, all from the repository root. Replace them with the actually-run commands
-as work proceeds.
+The commands actually run, all from the repository root. Note the interpreter: `python` does
+not resolve on the machine this was executed on, and the `py` launcher (Python 3.12.10) does.
 
-    python scripts/setup.py
+    py scripts/setup.py
     npm --prefix gateway install
     npm --prefix gateway run build
     npm --prefix connector install
     npm --prefix connector run build
     npm --prefix connector test
     npm --prefix gateway test
-    python scripts/harness-validate.py .
-    python scripts/check.py
+    npm --prefix gateway run e2e
+    py scripts/harness-validate.py .
+    py scripts/check.py
 
-The commands that start the stubs, the gateway, and the sample application are recorded in
-each milestone once the implementation exists, and must also land in `AGENTS.md`'s command
-list and in `docs/harness/manifest.yaml`.
+`npm --prefix gateway run e2e` is the single command that replaced the plan's separate
+start-the-stubs, start-the-gateway, mint-a-token and start-the-sample-application steps: it
+starts the stub providers, the gateway and the sample applications itself and drives all seven
+observations below to completion, exiting non-zero if any of them fails. The individual
+processes remain startable on their own — `npm --prefix gateway run gateway:logged` for the
+access-log observation, `npm --prefix connector run sample` for the sample application, and
+`npm --prefix connector run stream-probe` for the time-to-first-byte measurement. All of these
+are recorded in `AGENTS.md`'s command list and in `docs/harness/manifest.yaml`.
 
 ## Validation and Acceptance
 
@@ -507,7 +634,7 @@ response the gateway never saw. Sixth, that a declared reservation which traffic
 reported as unaddressed with its cause, and that eligible traffic then moves onto it without
 the calling application changing, while never leaving `allowed_models`.
 
-Automated proof: `python scripts/check.py` passes, plus both packages' test commands.
+Automated proof: `py scripts/check.py` passes, plus both packages' test commands.
 
 This evidence maps to the product specification's acceptance criteria for the connector, for
 behavior 4, and to the criterion that a workload in `unmet` carries the header on a request
@@ -536,9 +663,40 @@ configured provider exactly as it does before its first list arrives.
 
 ## Artifacts and Notes
 
-None yet. Add M1's access-log observation, its target-switch transcript, its
-time-to-first-byte measurement, and M2's unaddressed-reservation report and routing
-transcript here as they are produced.
+All seven observations below come from one command, `npm --prefix gateway run e2e`, which
+starts the stub providers, the gateway and the sample applications and drives every check to
+completion. It reported 7 of 7 passing on 2026-08-15. Every provider in it is a stub process on
+localhost; nothing here touched a real provider.
+
+1. **The gateway is out of the path.** No chat-completion request appears in the gateway's own
+   HTTP access log while both stubs serve traffic. This one observation is the architecture.
+2. **A target change reaches the connector in time.** The target switch takes effect within five
+   seconds, and the gateway records the connector's acknowledgement carrying the version it
+   pushed.
+3. **Token counts only the connector could have supplied.** `GET /v1/workloads/default/status`
+   reports connector-supplied token counts and latency.
+4. **The gateway is not a single point of failure.** Killing the gateway leaves the sample
+   application serving traffic; the connector's reconnect attempts back off rather than
+   spinning; restarting the gateway recovers.
+5. **The degraded mode is detectable, as specified.** With `GATEWAY_SSE_DISABLED=1` the stream
+   answers `503`, the connector still receives lists by polling, and the gateway observes
+   `deliveryMode=poll, ackDelayMs=3067` — the large acknowledgement delay is exactly the signal
+   the specification requires the gateway be able to see. The environment variable exists so
+   this is demonstrable without a firewall rule.
+6. **The connector relays streams rather than buffering them.** Time-to-first-byte 1070 ms
+   against a stub emitting chunks one second apart, with the stream ending at 3084 ms — the
+   first byte arrived 2014 ms before the last. A buffering connector passes every other check
+   and fails this one.
+7. **`unmet` is reachable on connector reports alone.** The workload entered `unmet` with zero
+   in-path requests, and the sample application's responses carried
+   `x-gateway-target-unmet: p95_ms` on responses the gateway never saw. Before the measurement
+   fix recorded under *Surprises & Discoveries*, this same check needed 160 in-path requests to
+   reach `unmet`; that difference is the evidence the fix is real.
+
+Test and gate results on the same date: `npm --prefix gateway test` 203 tests across 61 suites,
+all passing; `npm --prefix connector test` 32 tests across 11 suites, all passing;
+`py scripts/harness-validate.py .` passing with zero warnings; `py scripts/check.py` passing
+3 of 3.
 
 ## Interfaces and Dependencies
 
@@ -570,10 +728,19 @@ transcript here as they are produced.
 
 ## Revision Note
 
+2026-08-15 — Completed both milestones and moved this plan to `completed/`. `Progress` ticks M1
+and M2 with what actually exists; `Surprises & Discoveries` records the measurement gap that the
+end-to-end run caught and unit tests could not; the Decision Log gained three entries made
+during implementation (connector-reported usage feeding the measurement windows, per-customer
+measurement deferred with cohort work, and the ranked list's order derived from repeated
+`chooseProvider` calls); `Artifacts and Notes` carries the seven end-to-end observations with
+their numbers; `Outcomes & Retrospective` replaces "Not started."; and `Concrete Steps` records
+the commands actually run, including the interpreter correction from `python` to `py`.
+
 2026-08-15 — Created this plan to carry the work after the tracer, following grilling ticket
 [#8](https://github.com/hoomji/henry-ai-router/issues/8), which resolved the behavior
 sequence. It is a separate plan rather than further milestones on
-[`2026-08-14-provider-risk-gateway-tracer.md`](2026-08-14-provider-risk-gateway-tracer.md)
+[`2026-08-14-provider-risk-gateway-tracer.md`](../completed/2026-08-14-provider-risk-gateway-tracer.md)
 because that plan's stated destination is its own two milestones and its scope explicitly
 excludes behaviors 2 through 5; extending it would have made its own scope untrue. The
 sequencing decision, the routing-authority decision, and the four consequential choices that

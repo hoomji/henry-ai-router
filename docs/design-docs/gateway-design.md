@@ -1,19 +1,23 @@
 # Gateway design: modules, adapter contract, routing seam
 
-- State: `Partially verified` (M1's portion observed; everything M2 introduces is still
-  proposed design)
+- State: `Verified`
 - Owner: henry.tran@uniblock.dev
-- Last verified: 2026-08-15 — against M1 of the tracer ExecPlan. Verified: the `server.ts`,
-  `types.ts`, `config.ts`, `routing/chooseProvider.ts`, `providers/adapter.ts`,
-  `providers/passthrough.ts`, and `dev/stubUpstream.ts` parts of the layout; the dependency
-  rule; the adapter contract including `costOf`; and the fail-open path. Unverified: every
-  module under `targets/` and `management/`, `routing/stats.ts`, and `dev/load.ts`, none of
-  which exist yet.
+- Last verified: 2026-08-15 — against the completed connector and reservation ExecPlan.
+  Every module in the layout below now exists, including `controlplane/` and
+  `reservations/`; the dependency rule holds with its two declared concessions
+  (`targets/store.ts` on `node:sqlite`, `controlplane/api.ts` on `node:http`); the routing
+  seam populates a binding reason over several candidates and kept its signature and purity
+  through the reservation change; the load run demonstrates the split moving with the
+  target; and the end-to-end run demonstrates the gateway staying out of the request path
+  while a connector serves it. What remains unverified is not in this document's scope:
+  nothing has run against a real provider, so every capability floor is unmeasured and all
+  evidence is simulated.
 - Domain language: [`../../CONTEXT.md`](../../CONTEXT.md)
 - Review trigger: the first commit under `gateway/`, or any revision to the governing
   spec or ExecPlan below
 - Governing spec: [`../product-specs/provider-risk-management-gateway.md`](../product-specs/provider-risk-management-gateway.md)
-- Implementation sequence: [`../exec-plans/active/2026-08-14-provider-risk-gateway-tracer.md`](../exec-plans/active/2026-08-14-provider-risk-gateway-tracer.md)
+- Implementation sequence: [`../exec-plans/completed/2026-08-14-provider-risk-gateway-tracer.md`](../exec-plans/completed/2026-08-14-provider-risk-gateway-tracer.md),
+  then [`../exec-plans/completed/2026-08-15-connector-and-reservation-aware-routing.md`](../exec-plans/completed/2026-08-15-connector-and-reservation-aware-routing.md)
 
 ## Problem context
 
@@ -56,9 +60,21 @@ writers from the first milestone (ADR
 *Durability and the target store* below.
 
 Deployment topology consequently could not be kept fully out of scope: designing for
-concurrent writers presumes more than one gateway process. Multi-tenancy and authn remain
-non-goals — the store carries a customer key column with a single hardcoded value and no
-API surface.
+concurrent writers presumes more than one gateway process.
+
+**Authn is no longer a non-goal, and the sentence that used to stand here is now false.** It
+said the store carried a customer key column with a single hardcoded value and no API
+surface. The connector ExecPlan removed all three parts of that: a `connectors` table holds
+minted bearer tokens against the customer they belong to, `POST /v1/admin/connectors` mints
+one behind `GATEWAY_ADMIN_TOKEN`, every connector endpoint resolves its customer from the
+token, and the store exposes a `forCustomer()` view through which queries are scoped —
+replacing the hardcoded `CUSTOMER_ID` outright. What stays a non-goal is exactly what the
+paragraph above names: cohort multi-tenancy, the cross-customer data-model change behavior 3
+needs. Per-customer *measurement* is deferred with it, and that deferral is load-bearing
+rather than cosmetic — the measurement windows are keyed by (workload, provider) and carry
+no customer dimension, so only the service's own customer's usage reports are folded into
+them. Folding several customers in would silently average one customer's providers into
+another customer's target.
 
 ## Module layout (proposed)
 
@@ -78,6 +94,17 @@ API surface.
           store.ts            the target store: durable read/CAS-write, boot load, polling
           feasibility.ts      declaration-time check against the capability catalogue
           unmet.ts            the two-window state machine over merged window summaries
+          service.ts          assembles the apparatus: the in-memory document copy, the
+                              polling refresh, the window lifecycle, the unmet advance
+        reservations/
+          document.ts         the reservation document: parse, validate, version
+          unaddressed.ts      pre-paid capacity a customer's traffic is failing to address
+        controlplane/
+          rankedList.ts       pure: derives a total order by calling chooseProvider repeatedly
+          directives.ts       the push scheduler, debounced per workload
+          usageOutcome.ts     pure: maps a reported call to a RequestOutcome for the windows
+          api.ts              the connector-facing surface: SSE stream, ack, lists, usage,
+                              admin mint, GET/PUT /v1/reservations
         management/
           api.ts              GET/PUT /v1/targets, GET /v1/workloads/{name}/status
           notify.ts           signed, at-least-once unmet-transition notification
@@ -88,20 +115,86 @@ API surface.
                               provenance and TTL (feasibility input)
         dev/
           stubUpstream.ts     canned-completion upstream for credential-free testing
+          simProvider.ts      parameterized simulated providers (latency, cost, failure)
           load.ts             M2 load script: prints traffic split, measured p95, status
+          e2e.ts              the connector plan's evidence artifact: starts stubs, gateway
+                              and sample apps, drives seven checks, exits non-zero on failure
+          e2eStub.ts          the stub provider the e2e run drives
+          loggedGateway.ts    the gateway with an HTTP access log, so "no chat-completion
+                              request reaches the gateway" is observable by eye
 
-Dependency direction is one-way: `server.ts` and `management/` import routing, targets,
-and providers; nothing under `routing/`, `targets/`, or `providers/` imports `server.ts`,
-`management/`, `node:http`, or any framework type. That rule is what the Decision Log's
-"portable data path" claim rests on, and it is the first thing a reviewer should check in
-every gateway PR. `targets/store.ts` is the one deliberate concession: it performs I/O
-against `node:sqlite`. It is confined to that module precisely so the rest of `targets/`
-stays pure, and so a Rust or Go data plane replaces one file rather than a package.
+Dependency direction is one-way: `server.ts`, `management/` and `controlplane/` import
+routing, targets, reservations and providers; nothing under `routing/`, `targets/`,
+`reservations/`, or `providers/` imports `server.ts`, `management/`, `controlplane/`,
+`node:http`, or any framework type. That rule is what the Decision Log's "portable data
+path" claim rests on, and it is the first thing a reviewer should check in every gateway PR.
+
+There are now **two** deliberate concessions, and both are declared here so a reviewer can
+tell a concession from drift. `targets/store.ts` performs I/O against `node:sqlite`. And
+`controlplane/api.ts` imports `node:http`, exactly as `management/api.ts` does, because it
+is an HTTP surface — it is the connector-facing edge, not policy. Each is confined to its
+one module for the same reason: so the rest of `targets/` and the whole of `controlplane/`'s
+logic stays pure, and so a Rust or Go data plane replaces one file rather than a package.
+The confinement is checkable rather than asserted — `store.ts` is the only file under `src/`
+naming `node:sqlite`, and `node:http` appears only in `server.ts`, `management/api.ts`,
+`controlplane/api.ts` and the `dev/` files.
+
+That split is why `controlplane/` has four modules rather than one. `rankedList.ts` and
+`usageOutcome.ts` are pure functions with no HTTP in them: the first derives a total order
+over providers, the second maps a connector-reported call to a `RequestOutcome`. Both are
+the kind of logic that must be unit-testable without a socket, and both were placed outside
+`api.ts` for that reason. `directives.ts` holds the push scheduler and its per-workload
+debounce. Only `api.ts` touches the wire.
+
+`targets/service.ts` was added during M2 and is the one module this layout did not
+originally name. It exists because the four modules beside it are pieces rather than an
+apparatus: something has to own the store handle, the in-memory document copy, the polling
+refresh, the window lifecycle, and the `unmet` advance, and leaving that assembly inside
+`server.ts` would have put control-plane state in the data path. Its placement is decided
+by the dependency rule rather than by taste. Both `server.ts` and `management/api.ts` need
+it — the data path to route on the current target, the management surface to serve and
+replace it — so it must sit where both may import it; and since nothing under `targets/`
+may import `management/`, `targets/` is the only directory that satisfies both. The same
+rule explains one shape inside it: it delivers `unmet` transitions through an injected
+callback rather than importing `management/notify.ts`, because the convenience import would
+have been the first crack in the rule it was placed to respect.
 
 `management/` is deliberately a sibling of `server.ts` rather than part of it: the
 management surfaces are control-plane, serve no customer model traffic, and must be able
 to fail without touching the data path. A management outage must never be able to break
-forwarding — the fail-open boundary applies to our own control plane too.
+forwarding — the fail-open boundary applies to our own control plane too. `controlplane/` is
+a sibling on the same argument: it serves connectors, not model traffic.
+
+## The connector as a sibling runtime
+
+This document scopes `gateway/`. It is no longer the only runtime in the repository, and the
+other one changes what this one is. `connector/` is a second top-level TypeScript package
+under the same constraints — Node 24 or newer, `tsc`, no runtime dependency outside the Node
+standard library — holding the component that installs into a customer's own application at
+their call site. **In normal operation the connector, not the gateway, is what calls a
+provider.** The gateway's data path is kept for behavior 2's interception window, not because
+it carries traffic today.
+
+Two consequences land inside this document's scope, and neither is obvious from the code.
+
+First, the ranked list is the entire routing product in normal operation, and it comes from
+this document's routing seam by repeated call rather than from a comparator — see *Routing
+seam* below. The connector holds no policy at all beyond "on error, try the next provider in
+the list".
+
+Second, and more easily broken: **connector-reported usage is the only input the measurement
+windows have.** With the gateway out of the request path, `routing/stats.ts` sees nothing
+from `server.ts` in production, so the windows are fed at ingestion in `controlplane/api.ts`
+by way of the pure `usageOutcome.ts`. This was got wrong once — reports were persisted for
+billing and never folded into the windows, which left every provider `insufficient_data`
+forever and made `unmet` unreachable — and it was invisible to unit tests because every test
+of `unmet` reached the windows through the in-path path. Three rules protect it now. A
+shared `classifyStatus` in `routing/stats.ts` serves both paths so the two classifications
+cannot drift; it treats the connector's `statusCode: 0` transport-failure encoding as
+provider risk rather than success, the trap being that `0 < 400`. A record naming a provider
+with no catalogue entry is dropped as unpriceable rather than priced at zero, because a zero
+rate is indistinguishable from free capacity. And only the service's own customer's records
+are folded in, because the windows carry no customer dimension.
 
 ## Provider adapter contract (proposed)
 
@@ -177,7 +270,17 @@ streaming pass-through ships with the connector; chunk transform stays deferred 
   constraint: one implementation serves both the pushed list and the per-request choice the
   gateway makes while it is in the path during an *interception window*. It also fixes where
   policy lives — the connector evaluates no target and holds no policy, carrying only the
-  rule "on error, try the next provider in the list".
+  rule "on error, try the next provider in the list". The list is derived by calling this
+  function repeatedly rather than by a comparator, precisely so a second implementation of
+  the routing decision cannot come into existence.
+- **Reservation preference lives inside the seam, and the clock does not.** Behavior 4 adds a
+  branch preferring a provider that addresses a live reservation for the requested model, and
+  costing it at the reservation's effective rate rather than the catalogue's public rate. It
+  is a preference, not an override: it never beats a `hard` dimension and never leaves
+  `allowed_models`, and it is inert when a customer has declared no reservations. Whether a
+  reservation's term is *live* is a clock question, so it is resolved by the caller into
+  `state.liveReservations` rather than read inside the function. That is what let the change
+  land without altering the signature or the purity this whole section depends on.
 
 ## Fail-open forwarding path (proposed)
 
@@ -217,6 +320,28 @@ a shared window would let batch traffic's latency mask an interactive workload's
 regression. Below the sample floor a dimension's value is `insufficient_data` — a distinct
 value in the snapshot, not a null and not a zero, so the seam cannot accidentally treat an
 unmeasured dimension as a satisfied one.
+
+**Two lookbacks, not one.** `targets/service.ts` reads the store's window summaries twice
+per tick with different horizons, because the two consumers are asking different questions.
+What routing and the status resource report is a *trailing* measurement — the last three
+closed windows folded together, which is what a window "spanning trailing 5 minutes or 200
+requests" actually means in a store that keeps one row per closed window. A single closed
+window would make the evidence evaporate moments after it was gathered, dropping every
+provider back to `insufficient_data` and re-triggering exploration over traffic we had just
+measured. The `unmet` machine, by contrast, judges *the window that just closed* and only
+that one: folding older windows back in would keep judging a recovered workload on the
+windows it had already recovered from, which would break the deliberate symmetry of the
+two-window entry and the two-window exit. Summaries are pruned at three windows, so the
+trailing horizon and the retention horizon are the same number by construction.
+
+**Exploration.** A provider that is never chosen can never be measured, so the seam
+deliberately prefers a provider with no measurement over a measured one. This is a
+correctness requirement rather than a heuristic — without it the first provider to be
+measured keeps the traffic and the alternatives stay permanently `insufficient_data` — but
+it has a consequence for anyone reading a short run: until every candidate has been
+measured, the observed traffic split is the exploration transient and not the routing
+policy. That is why the load script warms up before it measures, and why a split read
+before warm-up completes says nothing about whether targets work.
 
 `chooseProvider` projects each dimension per provider for the next request, restricted to
 `allowed_models`, and picks the provider minimizing the objective among those holding
@@ -507,25 +632,88 @@ work gated on the spec's open decisions.
 
 ## Evidence
 
-2026-08-15, against M1. The four checks this document names, and what each found:
+2026-08-15, against M2. The four checks this document names, re-run over the full tree, and
+what each found:
 
-- **The tree matches the layout.** For M1's share of it, yes — file for file, at the paths
-  above. The layout is a superset: `routing/stats.ts`, everything under `targets/` and
-  `management/`, `providers/capabilities.ts`, and `dev/load.ts` are M2's and absent.
-- **No inward imports.** Verified: `routing/` and `providers/` import only `../types.js`
-  and each other, and nothing under either mentions `node:http`, `server.ts`, or
-  `management/`. `server.ts` and `dev/stubUpstream.ts` are the only files importing
-  `node:http`.
-- **`chooseProvider` returns a binding reason.** Verified as a type: `RoutingDecision`
-  carries `provider`, `boundBy`, and per-candidate `rejected` reasons. M1 populates only
-  the first — with one candidate there is nothing to reject and nothing binding — so the
-  shape is verified and the content is not yet exercised.
-- **The M1 transcript exists.** Yes, in the ExecPlan's *Artifacts and Notes*: a proxied
-  completion, and the same completion carrying `x-gateway-failopen: true` under a thrown
-  routing seam. `npm --prefix gateway test` covers both, plus `502` on an unreachable
-  upstream.
+- **The tree matches the layout.** Yes — file for file, at the paths above, with every M2
+  module present. Two files existed that this document had not named and that the layout
+  above now records: `targets/service.ts` and `dev/simProvider.ts`. Recording them was the
+  point of the re-check; a layout that quietly omits a module is a layout a reviewer cannot
+  use to detect drift.
+- **No inward imports.** Verified by search over `src/`. Nothing under `routing/`,
+  `targets/`, or `providers/` imports `server.ts`, `management/`, or `node:http`; the only
+  textual match in those directories is a comment in `providers/adapter.ts` describing the
+  rule. `node:http` appears only in `server.ts`, `management/api.ts`, and the three `dev/`
+  files. The declared concession holds exactly as declared: `targets/store.ts` is the sole
+  file under `src/` that names `node:sqlite`.
+- **`chooseProvider` returns a binding reason.** Now verified in content, not only as a
+  type. With several candidates the seam populates `rejected` with per-provider,
+  per-dimension reasons and reports the dimension that bound the decision;
+  `gateway/test/chooseProvider.test.ts` exercises the populated cases that M1 could not,
+  having had one candidate and therefore nothing to reject.
+- **The M2 evidence artifact exists and passes.** `npm --prefix gateway run load` starts the
+  simulated providers, warms up until every provider is genuinely measured, then drives two
+  workloads whose targets differ. Four consecutive runs on 2026-08-15 all exited zero. The
+  last reported the fast provider holding 92.0% of the split under the latency target and
+  52.5% under the cost target — a 39.5 percentage-point shift — with blended cost moving
+  $0.02776 to $0.01670 between the two. `npm --prefix gateway test` is green at 132 tests
+  across 35 suites.
 
-Move State to `Verified` when the same four checks pass over the full M2 tree.
+2026-08-15, against the completed connector and reservation ExecPlan. The same checks re-run
+over the larger tree, plus the one this document could not previously make:
+
+- **The tree matches the layout,** including `controlplane/`, `reservations/` and the three
+  new `dev/` modules now recorded above.
+- **The dependency rule holds with two declared concessions.** `targets/store.ts` is still
+  the only file under `src/` naming `node:sqlite`; `node:http` appears only in `server.ts`,
+  `management/api.ts`, `controlplane/api.ts` and the `dev/` files. `rankedList.ts` and
+  `usageOutcome.ts` are pure.
+- **`chooseProvider` kept its signature and its purity** through the reservation change, with
+  term liveness resolved by the caller.
+- **The gateway is demonstrably out of the request path.** `npm --prefix gateway run e2e`
+  reported 7 of 7 checks on 2026-08-15: no chat-completion request in the gateway's access
+  log, a target switch inside five seconds with the connector's acknowledgement recorded,
+  connector-supplied token counts on the status resource, the sample application surviving
+  the gateway being killed, the polling fallback detectable at `deliveryMode=poll,
+  ackDelayMs=3067`, streaming time-to-first-byte 1070 ms against a 3084 ms stream, and
+  `unmet` reached on connector reports alone with 0 in-path requests. `npm --prefix gateway
+  test` is green at 203 tests across 61 suites and `npm --prefix connector test` at 32 tests
+  across 11 suites.
+
+Both limits below still apply unchanged, and one is worth restating in this context: check 7
+above is what caught the measurement gap recorded under *The connector as a sibling runtime*.
+Every unit test passed while that defect was live.
+
+State moved to `Verified` on the strength of those four. Two limits belong next to the
+claim rather than buried under it. All of it is simulated: no run has touched a real
+provider, so every capability floor is unmeasured and the `measured` provenance tier is
+empty in practice. And nothing runs these checks except a person — there is no CI, so
+"verified" means verified on the date stamped above and not continuously.
+
+Revision note: 2026-08-15 — reconciled with the completed connector and reservation ExecPlan
+([`../exec-plans/completed/2026-08-15-connector-and-reservation-aware-routing.md`](../exec-plans/completed/2026-08-15-connector-and-reservation-aware-routing.md)).
+The layout gained `controlplane/` (`rankedList.ts`, `directives.ts`, `usageOutcome.ts`,
+`api.ts`), `reservations/` (`document.ts`, `unaddressed.ts`), and three `dev/` modules. The
+dependency rule now declares two concessions rather than one: `controlplane/api.ts` on
+`node:http`, beside `targets/store.ts` on `node:sqlite`. The multi-tenancy non-goal sentence
+that claimed a hardcoded customer key with no API surface was false and is corrected in
+place; cohort multi-tenancy and per-customer measurement stay deferred. A new section records
+the connector as a sibling runtime and, with it, the fact that connector-reported usage is
+the only input the measurement windows have — the one thing in this design that was got
+wrong, was invisible to unit tests, and is easy to break again. `chooseProvider` gained a
+reservation preference while keeping its signature and purity, term liveness having been
+resolved by the caller into the state snapshot. Nothing about the adapter contract, the
+fail-open path, or the store's durability design changed.
+
+Revision note: 2026-08-15 — reconciled with the M2 tree and moved State from
+`Partially verified` to `Verified`. Two modules M2 built that this document had not named
+joined the layout: `targets/service.ts`, with the dependency-rule argument that fixes where
+it can live, and `dev/simProvider.ts`. The target-state routing section gained the two
+lookbacks — a trailing three-window merge for what routing and the status resource report,
+a single closed window for the `unmet` verdict — and the exploration rule that makes an
+unmeasured provider preferred, which is why a split read before warm-up describes nothing.
+The Evidence section was re-run over the full tree rather than edited. Nothing about the
+adapter contract, the fail-open path, or the store design changed.
 
 Revision note: 2026-08-15 — resolved
 [#12](https://github.com/hoomji/henry-ai-router/issues/12) (capability catalogue) on the
