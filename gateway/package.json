@@ -14,6 +14,7 @@
     "load": "node dist/src/dev/load.js",
     "e2e": "node dist/src/dev/e2e.js",
     "gateway:logged": "node dist/src/dev/loggedGateway.js",
+    "inspect": "node dist/src/dev/inspect.js",
     "test": "npm run build && node --test \"dist/test/**/*.test.js\""
   },
   "devDependencies": {

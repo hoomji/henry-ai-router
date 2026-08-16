@@ -55,10 +55,15 @@ capabilities:
     status: "verified"
     evidence:
       - "command: python scripts/harness-validate.py ."
+  # The gate executes both runtime suites, so the declared test command can no longer pass
+  # while the tests fail. Proven negatively on 2026-08-16: a deliberately failing test made
+  # `python scripts/check.py` report `FAIL: repository gate failed (1 of 5)`.
   repository_gate:
     status: "verified"
     evidence:
       - "command: python scripts/check.py"
+      - "command: python scripts/check.py --e2e"
+      - "scripts/check.py"
   automated_tests:
     status: "verified"
     evidence:
@@ -142,10 +147,44 @@ capabilities:
     evidence:
       - "gateway/src/dev/simProvider.ts"
       - "gateway/src/providers/capabilities.ts"
-  continuous_integration:
-    status: "missing"
+  # One command that answers "what does the control plane believe right now?" against a live
+  # or a post-mortem store: targets, measured windows, reservation liveness, whether the
+  # connector acknowledged the list it was pushed, and the ranked order itself — derived by
+  # calling `computeRankedList`, so the view cannot disagree with what was pushed.
+  runtime_inspection:
+    status: "verified"
     evidence:
-      - "ARCHITECTURE.md"
-policies: []
+      - "command: npm --prefix gateway run inspect"
+      - "command: npm --prefix gateway run gateway:logged"
+      - "gateway/src/dev/inspect.ts"
+      - "gateway/test/inspect.test.ts"
+  # Two jobs on push and pull request: the gate, and the end-to-end run separately so a
+  # timing failure there is distinguishable from a broken test. The workflow shells out to
+  # `scripts/check.py` rather than restating its steps. Not `verified`: the workflow has
+  # never run on a remote at the time of writing, and no green run has been observed.
+  continuous_integration:
+    status: "executable"
+    evidence:
+      - ".github/workflows/gate.yml"
+      - "command: python scripts/check.py"
+# Only rules a command actually enforces belong here. A policy nobody can fail is a wish,
+# and a manifest full of wishes is how a harness stops being evidence.
+policies:
+  - id: "harness-contract-consistent"
+    enforcement: "python scripts/harness-validate.py ."
+    owner: "henry.tran@uniblock.dev"
+    remediation: "Reconcile the manifest with the repository: every declared entrypoint, command and evidence path must exist, and every knowledge store must list its own entries."
+  - id: "repository-local-links-resolve"
+    enforcement: "python scripts/check.py"
+    owner: "henry.tran@uniblock.dev"
+    remediation: "Fix or remove the unresolvable Markdown link the gate names. Moving a document means updating what points at it in the same change."
+  - id: "both-runtime-suites-pass"
+    enforcement: "python scripts/check.py"
+    owner: "henry.tran@uniblock.dev"
+    remediation: "Run the two runtime suites separately to see the failure in isolation. Each builds first, so a type error surfaces here as a failing suite."
+  - id: "end-to-end-claim-holds"
+    enforcement: "python scripts/check.py --e2e"
+    owner: "henry.tran@uniblock.dev"
+    remediation: "Read the named check in the run's summary. Check 7 failing means connector-reported usage is no longer reaching the measurement windows, which unit tests cannot see."
 freshness:
   review_after_days: 90

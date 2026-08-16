@@ -39,6 +39,7 @@ measurement windows have — a fact that is easy to break invisibly.
 - Harness capability state: [`docs/harness/manifest.yaml`](docs/harness/manifest.yaml)
 - Representative workflow: [`docs/harness/tracer-workflow.md`](docs/harness/tracer-workflow.md)
 - Repeated-friction ledger: [`docs/harness/learning-ledger.md`](docs/harness/learning-ledger.md)
+- Harness capability report: [`docs/harness/quality-report.md`](docs/harness/quality-report.md)
 
 ## Knowledge store
 
@@ -66,8 +67,18 @@ machine has. The scripts themselves are interpreter-agnostic and need Python 3.1
 
 - Setup: `python scripts/setup.py`
 - Focused check: `python scripts/harness-validate.py .`
-- Full verification: `python scripts/check.py`
+- Full verification: `python scripts/check.py` — prerequisites, the harness contract,
+  repository-local Markdown links, and both runtime test suites. Each runtime's `test`
+  script builds first, so the gate typechecks both runtimes as well. Add `--e2e` to
+  include `npm --prefix gateway run e2e`; it is out of the default gate because it binds
+  ports and starts processes.
 - Harness validation: `python scripts/harness-validate.py .`
+
+[`.github/workflows/gate.yml`](.github/workflows/gate.yml) runs that same gate on every
+push and pull request, plus the end-to-end run as a separate job. It calls
+`scripts/check.py` rather than restating its steps, so CI and a local run cannot disagree
+about what passed. CI installs both runtimes first, because `scripts/setup.py` reports on
+dependencies but deliberately does not install them.
 
 The gateway runtime has its own commands. `npm --prefix gateway install` is its setup, and
 `build` must run before `start` or `stub` because the tracer runs compiled JavaScript.
@@ -99,6 +110,18 @@ The gateway runtime has its own commands. `npm --prefix gateway install` is its 
 - Gateway with an access log: `npm --prefix gateway run gateway:logged` — the same gateway
   writing an HTTP access log, so the "no chat-completion request reaches the gateway"
   observation can be made by eye rather than only by the e2e script.
+- Runtime snapshot: `npm --prefix gateway run inspect` — read-only, needs no running gateway,
+  and answers the question a failing `e2e` or `load` run raises: *what does the control plane
+  currently believe?* It prints the target and reservation versions, reservation liveness, the
+  merged measurement window per provider, whether each connector has acknowledged the list
+  version it was pushed (the `STALE` marker is usually the real cause when routing "looks
+  wrong"), reported token counts, and the ranked list itself. The order is produced by calling
+  `computeRankedList`, the same function the control plane pushes from, so the view cannot
+  disagree with what connectors were sent. Point it at a store with `--store <path>` or
+  `GATEWAY_STORE_PATH`, select a customer with `--customer`, and add `--json` when something
+  downstream is reading. Connector tokens are printed truncated. Set `GATEWAY_PROVIDERS` as
+  the gateway had it, or the ranked list is computed against a catalogue the gateway was not
+  running — the output names which source it used.
 
 The connector runtime is a second package with its own install and build. Build before any
 of its run commands, for the same reason as the gateway: they execute compiled JavaScript.
