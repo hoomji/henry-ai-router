@@ -164,6 +164,17 @@ capabilities:
   # about what passed. `verified` as of 2026-08-16: both jobs ran green on a GitHub runner on
   # PR #15 — gate in 21s, end-to-end in 3m57s with 7/7 checks — which is the first proof that
   # these commands work off the machine they were written on.
+  # Detects documentation drift the gate is blind to: a document can be fluent, linked,
+  # indexed and false. Advisory by design — "stale" is a judgement, and a nightly red gate
+  # nobody can fix teaches people to ignore the gate. `--strict` is the reviewer's switch.
+  # It found two live contradictions on its first run: a product spec claiming the
+  # repository contained no implementation, and a design doc claiming there was no CI.
+  documentation_audit:
+    status: "verified"
+    evidence:
+      - "command: python scripts/docs-audit.py"
+      - "scripts/docs-audit.py"
+      - "docs/harness/docs-audit.md"
   continuous_integration:
     status: "verified"
     evidence:

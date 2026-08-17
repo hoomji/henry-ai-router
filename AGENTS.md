@@ -39,6 +39,7 @@ measurement windows have — a fact that is easy to break invisibly.
 - Harness capability state: [`docs/harness/manifest.yaml`](docs/harness/manifest.yaml)
 - Representative workflow: [`docs/harness/tracer-workflow.md`](docs/harness/tracer-workflow.md)
 - Repeated-friction ledger: [`docs/harness/learning-ledger.md`](docs/harness/learning-ledger.md)
+- Documentation audit routine: [`docs/harness/docs-audit.md`](docs/harness/docs-audit.md)
 - Harness capability report: [`docs/harness/quality-report.md`](docs/harness/quality-report.md)
 
 ## Knowledge store
@@ -73,6 +74,13 @@ machine has. The scripts themselves are interpreter-agnostic and need Python 3.1
   include `npm --prefix gateway run e2e`; it is out of the default gate because it binds
   ports and starts processes.
 - Harness validation: `python scripts/harness-validate.py .`
+- Documentation audit: `python scripts/docs-audit.py` — advisory, exits 0 and prints
+  candidates. It reports the documentation drift the gate cannot see: prose contradicting
+  what the repository contains, store documents missing from their index, orphaned
+  documents, `Reviewed:` dates past the 90-day budget, path references to a moved ExecPlan
+  in Markdown, YAML, TypeScript or Python, and leftover placeholder text. Add `--strict` to
+  make a finding fail. The full routine, including the four passes that need a reader, is
+  [`docs/harness/docs-audit.md`](docs/harness/docs-audit.md).
 
 [`.github/workflows/gate.yml`](.github/workflows/gate.yml) runs that same gate on every
 push and pull request, plus the end-to-end run as a separate job. It calls
