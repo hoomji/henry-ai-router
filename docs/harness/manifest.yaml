@@ -140,13 +140,22 @@ capabilities:
       - "command: npm --prefix gateway run load"
       - "gateway/src/dev/load.ts"
       - "gateway/src/dev/simProvider.ts"
-  # Every check in this repository runs against simulated providers. Nothing here has been
-  # exercised against a real provider account, and no measured capability floor exists.
+  # Verified as of 2026-08-17: `npm --prefix gateway run real-provider-check` starts a real
+  # gateway, mints a connector token, and makes the connector place one real call against a
+  # real provider. Run against OpenRouter's free `google/gemma-4-26b-a4b-it:free`: PASS
+  # provider=fallback status=200 ms=2869. Also run against a deliberately wrong model name
+  # to confirm the command fails rather than always passing: FAIL status=400. This is a
+  # smoke test, not a measured capability floor — no per-model latency or availability
+  # number is claimed here; see docs/references/2026-08-15-provider-capability-floors.md.
   real_provider_verification:
-    status: "missing"
+    status: "verified"
     evidence:
+      - "command: npm --prefix gateway run real-provider-check"
+      - "gateway/src/dev/realProviderCheck.ts"
+      - "connector/src/dev/realProviderProbe.ts"
       - "gateway/src/dev/simProvider.ts"
       - "gateway/src/providers/capabilities.ts"
+      - "docs/harness/learning-ledger.md"
   # One command that answers "what does the control plane believe right now?" against a live
   # or a post-mortem store: targets, measured windows, reservation liveness, whether the
   # connector acknowledged the list it was pushed, and the ranked order itself — derived by

@@ -9,3 +9,8 @@ connector/dist/
 *.sqlite
 *.sqlite-wal
 *.sqlite-shm
+
+# Phase 0 real-provider credentials. Never committed.
+.env
+gateway/.env
+connector/.env

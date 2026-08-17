@@ -47,6 +47,13 @@ change that stops that happening leaves every provider `insufficient_data` forev
 `unmet` unreachable, and will not fail any unit test. See the connector ExecPlan's
 *Surprises & Discoveries*.
 
+**Infrastructure cost and capacity sizing for this push model are not documented anywhere
+in this repository.** There is no expected-connector-count projection, no per-connection
+memory/CPU budget for the held-open SSE sockets, and no hosting cost estimate for the
+gateway process. Before committing to a deployment target, size this from real connector
+growth assumptions rather than assuming the push model is free — it is cheap, but "cheap"
+has not been quantified.
+
 The data path reads an in-memory copy of the document, refreshed by polling. So a store
 outage or a broken management surface degrades only the control plane — writes fail and
 status may go stale — while forwarding continues. A `200` on `PUT /v1/targets` means
@@ -127,15 +134,17 @@ two-variable tracer setup still works; the full list for both runtimes is in
 [`AGENTS.md`](AGENTS.md).
 
 A stub upstream and a set of simulated providers under `gateway/src/dev/` serve canned and
-parameterized completions, so every check still runs offline against the working tree with
-no provider account involved. That is also the honest limit of the evidence: nothing here
-has been exercised against a real provider, and no measured capability floor exists.
+parameterized completions, so every check `scripts/check.py` runs stays offline with no
+provider account involved. One opt-in, credential-gated exception exists outside that gate:
+`npm --prefix gateway run real-provider-check` starts a real gateway, mints a connector
+token, and makes the connector place one real call against a real provider (OpenRouter, as
+of 2026-08-17 — see [the learning ledger](docs/harness/learning-ledger.md)). It is a smoke
+test, not a measured capability floor: no measured capability floor exists.
 
 The harness manifest declares `startable_runtime`, `automated_tests`, `management_surface`,
 `durable_state`, `target_routing_load_evidence`, `control_plane_push`, `connector_runtime`,
-`reservation_aware_routing`, and `connector_e2e_evidence` as verified, with commands and
-test files as evidence. `real_provider_verification` and `continuous_integration` are
-missing: all proof is simulated, and nothing runs these commands except a person.
+`reservation_aware_routing`, `connector_e2e_evidence`, `continuous_integration`, and
+`real_provider_verification` as verified, with commands and test files as evidence.
 
 ## Decisions
 

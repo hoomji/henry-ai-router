@@ -12,6 +12,7 @@
     "sample": "node dist/src/dev/sampleApp.js",
     "e2e-app": "node dist/src/dev/e2eApp.js",
     "stream-probe": "node dist/src/dev/streamProbe.js",
+    "real-provider-probe": "node dist/src/dev/realProviderProbe.js",
     "test": "npm run build && node --test \"dist/test/**/*.test.js\""
   },
   "devDependencies": {

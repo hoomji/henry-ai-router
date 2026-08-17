@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<!--
+  PROTOTYPE — throwaway. Question: "what should a customer onboarding UI for the
+  gateway look like?" Three structurally different variants, switchable via ?variant=.
+  All data is mocked in-memory; nothing here talks to a real gateway.
+  Not for production. See docs/prototypes/onboarding-ui/README.md.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Gateway Onboarding — Prototype</title>
+<style>
+  :root {
+    --bg: #0b0d12;
+    --panel: #12151c;
+    --panel-2: #1a1e28;
+    --border: #262b38;
+    --text: #e6e8ee;
+    --text-dim: #8b91a3;
+    --accent: #6ee7b7;
+    --accent-2: #60a5fa;
+    --danger: #f87171;
+    --mono: "SF Mono", "Fira Code", Menlo, monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    min-height: 100vh;
+  }
+  code, .mono { font-family: var(--mono); }
+
+  /* ---------- floating switcher ---------- */
+  #switcher {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #1e2230;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 8px 10px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+    z-index: 9999;
+    font-size: 13px;
+  }
+  #switcher button {
+    background: var(--panel-2);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    width: 28px;
+    height: 28px;
+    cursor: pointer;
+    font-size: 14px;
+  }
+  #switcher button:hover { background: #262c3c; }
+  #switcher .label { color: var(--accent); font-weight: 600; min-width: 170px; text-align: center; }
+  #switcher .hint { color: var(--text-dim); font-size: 11px; }
+
+  .hidden { display: none !important; }
+
+  /* shared bits variants may use */
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+  }
+  input, select {
+    background: #0d0f15;
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 6px;
+    padding: 8px 10px;
+    font-size: 13px;
+    font-family: var(--mono);
+  }
+  button.primary {
+    background: var(--accent);
+    color: #06231a;
+    border: none;
+    border-radius: 8px;
+    padding: 10px 16px;
+    font-weight: 700;
+    cursor: pointer;
+    font-size: 13px;
+  }
+  button.primary:hover { filter: brightness(1.08); }
+  .pill {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 600;
+  }
+  .pill.ok { background: rgba(110,231,183,0.15); color: var(--accent); }
+  .pill.warn { background: rgba(248,113,113,0.15); color: var(--danger); }
+</style>
+</head>
+<body>
+
+<div id="root"></div>
+
+<div id="switcher">
+  <button id="prev">←</button>
+  <span class="label" id="label">A — Wizard</span>
+  <button id="next">→</button>
+  <span class="hint">?variant=A|B|C</span>
+</div>
+
+<script>
+/* ---------------------------------------------------------------------
+   Mock backend — stands in for the real gateway. Nothing here is real;
+   it exists so each variant has something to render and "act" on.
+--------------------------------------------------------------------- */
+const mock = {
+  customer: "acme-corp",
+  adminTokenSet: true,
+  connectorToken: null,
+  target: null,
+  status: null,
+
+  mintToken() {
+    this.connectorToken = "ctok_" + Math.random().toString(36).slice(2, 10);
+    return this.connectorToken;
+  },
+  setTarget(obj) {
+    this.target = { ...obj, version: (this.target?.version || 0) + 1 };
+    return this.target;
+  },
+  fetchStatus() {
+    this.status = {
+      requestCount: 173,
+      promptTokens: 4210,
+      completionTokens: 1188,
+      providerLatencyP95Ms: 305,
+      unmet: this.target ? null : "no target set",
+      connector: this.connectorToken ? { mode: "push", ackedVersion: this.target?.version ?? 0 } : null,
+    };
+    return this.status;
+  },
+};
+
+/* ---------------------------------------------------------------------
+   Variant A — Guided wizard (linear, step-by-step, one decision at a time)
+--------------------------------------------------------------------- */
+function VariantA(root) {
+  let step = 1;
+  const totalSteps = 4;
+
+  function render() {
+    root.innerHTML = `
+      <div style="max-width:640px;margin:60px auto;padding:0 20px;">
+        <div style="display:flex;gap:6px;margin-bottom:24px;">
+          ${Array.from({length: totalSteps}, (_, i) => `
+            <div style="flex:1;height:4px;border-radius:2px;background:${i < step ? 'var(--accent)' : 'var(--border)'}"></div>
+          `).join('')}
+        </div>
+        <div style="color:var(--text-dim);font-size:12px;margin-bottom:8px;">STEP ${step} OF ${totalSteps}</div>
+
+        ${step === 1 ? `
+          <div class="card">
+            <h2 style="margin-top:0;">Connect your app</h2>
+            <p style="color:var(--text-dim);">We'll mint a connector token scoped to <code>${mock.customer}</code>. Install the connector package and pass this token in.</p>
+            <button class="primary" id="mint">Mint connector token</button>
+            <div id="tokenOut" style="margin-top:14px;"></div>
+          </div>
+        ` : ''}
+
+        ${step === 2 ? `
+          <div class="card">
+            <h2 style="margin-top:0;">Set your routing target</h2>
+            <p style="color:var(--text-dim);">What should the gateway optimize for?</p>
+            <div style="display:flex;gap:10px;flex-wrap:wrap;margin:14px 0;">
+              <button class="primary" data-obj="cost">Minimize cost</button>
+              <button class="primary" data-obj="latency" style="background:var(--accent-2);color:#052135;">Minimize latency (p95)</button>
+              <button class="primary" data-obj="none" style="background:var(--panel-2);color:var(--text);">No preference (cheapest that satisfies)</button>
+            </div>
+            <div id="targetOut"></div>
+          </div>
+        ` : ''}
+
+        ${step === 3 ? `
+          <div class="card">
+            <h2 style="margin-top:0;">Install snippet</h2>
+            <p style="color:var(--text-dim);">Drop this into your app's environment:</p>
+            <pre class="mono" style="background:#0d0f15;padding:14px;border-radius:8px;overflow-x:auto;font-size:12px;">GATEWAY_URL=http://localhost:8080
+GATEWAY_CONNECTOR_TOKEN=${mock.connectorToken || '<mint a token in step 1>'}
+CONNECTOR_FALLBACK_BASE_URL=https://api.your-fallback-provider.com
+CONNECTOR_FALLBACK_MODEL=gpt-4o-mini</pre>
+          </div>
+        ` : ''}
+
+        ${step === 4 ? `
+          <div class="card">
+            <h2 style="margin-top:0;">You're live</h2>
+            <p style="color:var(--text-dim);">Traffic is now flowing through your connector, obeying the target you set.</p>
+            <button class="primary" id="checkStatus">Check status</button>
+            <div id="statusOut" style="margin-top:14px;"></div>
+          </div>
+        ` : ''}
+
+        <div style="display:flex;justify-content:space-between;margin-top:24px;">
+          <button id="back" ${step === 1 ? 'disabled style="opacity:0.3"' : ''} style="background:none;border:1px solid var(--border);color:var(--text);border-radius:8px;padding:8px 14px;cursor:pointer;">Back</button>
+          <button id="fwd" ${step === totalSteps ? 'disabled style="opacity:0.3"' : ''} style="background:none;border:1px solid var(--border);color:var(--text);border-radius:8px;padding:8px 14px;cursor:pointer;">Next →</button>
+        </div>
+      </div>
+    `;
+
+    root.querySelector('#back')?.addEventListener('click', () => { step = Math.max(1, step - 1); render(); });
+    root.querySelector('#fwd')?.addEventListener('click', () => { step = Math.min(totalSteps, step + 1); render(); });
+
+    root.querySelector('#mint')?.addEventListener('click', () => {
+      const t = mock.mintToken();
+      root.querySelector('#tokenOut').innerHTML = `<span class="pill ok">minted</span> <code>${t}</code>`;
+    });
+
+    root.querySelectorAll('[data-obj]').forEach(b => b.addEventListener('click', () => {
+      const t = mock.setTarget({ objective: b.dataset.obj });
+      root.querySelector('#targetOut').innerHTML = `<span class="pill ok">saved</span> objective=<code>${t.objective}</code> (v${t.version})`;
+    }));
+
+    root.querySelector('#checkStatus')?.addEventListener('click', () => {
+      const s = mock.fetchStatus();
+      root.querySelector('#statusOut').innerHTML = `
+        <div class="mono" style="font-size:12px;line-height:1.8;">
+          requests: ${s.requestCount}<br/>
+          prompt tokens: ${s.promptTokens} / completion: ${s.completionTokens}<br/>
+          p95 latency: ${s.providerLatencyP95Ms}ms<br/>
+          unmet: ${s.unmet ? `<span class="pill warn">${s.unmet}</span>` : `<span class="pill ok">none</span>`}
+        </div>
+      `;
+    });
+  }
+  render();
+}
+
+/* ---------------------------------------------------------------------
+   Variant B — Single-screen dashboard (everything visible at once,
+   no forced order, power-user oriented)
+--------------------------------------------------------------------- */
+function VariantB(root) {
+  function render() {
+    root.innerHTML = `
+      <div style="max-width:1100px;margin:40px auto;padding:0 20px;">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:20px;">
+          <h1 style="margin:0;font-size:20px;">Onboarding — <span style="color:var(--text-dim);font-weight:400;">${mock.customer}</span></h1>
+          <span class="pill ${mock.connectorToken && mock.target ? 'ok' : 'warn'}">${mock.connectorToken && mock.target ? 'ready' : 'incomplete'}</span>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;">
+          <div class="card">
+            <div style="color:var(--text-dim);font-size:11px;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:10px;">1. Connector token</div>
+            <div id="tokenBox" style="min-height:40px;font-size:12px;" class="mono">${mock.connectorToken ? `<span class="pill ok">minted</span><br/><span style="word-break:break-all;">${mock.connectorToken}</span>` : `<span class="pill warn">none</span>`}</div>
+            <button class="primary" id="mint" style="margin-top:12px;width:100%;">${mock.connectorToken ? 'Re-mint' : 'Mint token'}</button>
+          </div>
+
+          <div class="card">
+            <div style="color:var(--text-dim);font-size:11px;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:10px;">2. Target</div>
+            <select id="objSelect" style="width:100%;margin-bottom:10px;">
+              <option value="cost">Minimize cost</option>
+              <option value="latency">Minimize latency (p95)</option>
+              <option value="none">No preference</option>
+            </select>
+            <button class="primary" id="setTarget" style="width:100%;">Set target</button>
+            <div id="targetBox" style="margin-top:10px;font-size:12px;" class="mono">${mock.target ? `<span class="pill ok">v${mock.target.version}</span> ${mock.target.objective}` : `<span class="pill warn">unset</span>`}</div>
+          </div>
+
+          <div class="card">
+            <div style="color:var(--text-dim);font-size:11px;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:10px;">3. Status</div>
+            <button class="primary" id="refresh" style="width:100%;margin-bottom:10px;">Refresh</button>
+            <div id="statusBox" style="font-size:12px;line-height:1.7;" class="mono">no data yet</div>
+          </div>
+        </div>
+
+        <div class="card" style="margin-top:16px;">
+          <div style="color:var(--text-dim);font-size:11px;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:10px;">Environment snippet</div>
+          <pre class="mono" style="background:#0d0f15;padding:14px;border-radius:8px;overflow-x:auto;font-size:12px;margin:0;">GATEWAY_URL=http://localhost:8080
+GATEWAY_CONNECTOR_TOKEN=${mock.connectorToken || '<not minted yet>'}
+CONNECTOR_FALLBACK_BASE_URL=https://api.your-fallback-provider.com
+CONNECTOR_FALLBACK_MODEL=gpt-4o-mini</pre>
+        </div>
+      </div>
+    `;
+
+    root.querySelector('#mint').addEventListener('click', () => { mock.mintToken(); render(); });
+    root.querySelector('#setTarget').addEventListener('click', () => {
+      const obj = root.querySelector('#objSelect').value;
+      mock.setTarget({ objective: obj });
+      render();
+    });
+    root.querySelector('#refresh').addEventListener('click', () => {
+      const s = mock.fetchStatus();
+      root.querySelector('#statusBox').innerHTML = `
+        requests: ${s.requestCount}<br/>
+        tokens: ${s.promptTokens}/${s.completionTokens}<br/>
+        p95: ${s.providerLatencyP95Ms}ms<br/>
+        unmet: ${s.unmet ? `<span class="pill warn">${s.unmet}</span>` : `<span class="pill ok">none</span>`}
+      `;
+    });
+  }
+  render();
+}
+
+/* ---------------------------------------------------------------------
+   Variant C — Terminal-first (CLI transcript is primary, UI is a thin
+   read-only viewer bolted on the side — for an audience that lives in
+   a shell and just wants confirmation + a copy-pasteable command)
+--------------------------------------------------------------------- */
+function VariantC(root) {
+  const log = [];
+  function push(cmd, out) { log.push({ cmd, out }); render(); }
+
+  function render() {
+    root.innerHTML = `
+      <div style="display:grid;grid-template-columns:1.4fr 1fr;height:100vh;">
+        <div style="background:#000;padding:20px;overflow-y:auto;" class="mono">
+          <div style="color:#4ade80;margin-bottom:16px;">$ gateway onboard ${mock.customer}</div>
+          ${log.map(l => `
+            <div style="margin-bottom:14px;">
+              <div style="color:var(--accent-2);">$ ${l.cmd}</div>
+              <div style="color:#c9d1d9;white-space:pre-wrap;font-size:12px;">${l.out}</div>
+            </div>
+          `).join('')}
+          <div id="cursor" style="color:#4ade80;">$ <span style="opacity:0.6;">_</span></div>
+        </div>
+        <div style="padding:20px;border-left:1px solid var(--border);">
+          <div style="color:var(--text-dim);font-size:11px;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:14px;">Available commands</div>
+          <button class="primary" id="mint" style="width:100%;margin-bottom:8px;">connectors mint</button>
+          <button class="primary" id="target" style="width:100%;margin-bottom:8px;background:var(--accent-2);color:#052135;">targets put --objective cost</button>
+          <button class="primary" id="status" style="width:100%;margin-bottom:8px;background:var(--panel-2);color:var(--text);">workloads status</button>
+          <div style="margin-top:20px;color:var(--text-dim);font-size:11px;">
+            State:<br/>
+            token: ${mock.connectorToken ? '<span class="pill ok">set</span>' : '<span class="pill warn">unset</span>'}<br/>
+            target: ${mock.target ? '<span class="pill ok">v' + mock.target.version + '</span>' : '<span class="pill warn">unset</span>'}
+          </div>
+        </div>
+      </div>
+    `;
+    root.querySelector('#mint').addEventListener('click', () => {
+      const t = mock.mintToken();
+      push('curl -X POST /v1/admin/connectors -d customer=' + mock.customer, `{"token":"${t}"}`);
+    });
+    root.querySelector('#target').addEventListener('click', () => {
+      const t = mock.setTarget({ objective: 'cost' });
+      push('curl -X PUT /v1/targets -d \'{"objective":"cost"}\'', `200 OK  version=${t.version}`);
+    });
+    root.querySelector('#status').addEventListener('click', () => {
+      const s = mock.fetchStatus();
+      push('curl /v1/workloads/default/status', JSON.stringify(s, null, 2));
+    });
+    root.querySelector('.mono').scrollTop = root.querySelector('.mono').scrollHeight;
+  }
+  render();
+}
+
+/* ---------------------------------------------------------------------
+   Switcher wiring
+--------------------------------------------------------------------- */
+const VARIANTS = {
+  A: { fn: VariantA, name: 'A — Wizard' },
+  B: { fn: VariantB, name: 'B — Dashboard' },
+  C: { fn: VariantC, name: 'C — Terminal-first' },
+};
+const KEYS = Object.keys(VARIANTS);
+
+function currentVariant() {
+  const p = new URLSearchParams(location.search).get('variant');
+  return VARIANTS[p] ? p : 'A';
+}
+
+function mount(key) {
+  document.getElementById('label').textContent = VARIANTS[key].name;
+  const root = document.getElementById('root');
+  root.innerHTML = '';
+  VARIANTS[key].fn(root);
+}
+
+function setVariant(key) {
+  const url = new URL(location.href);
+  url.searchParams.set('variant', key);
+  history.replaceState(null, '', url);
+  mount(key);
+}
+
+function cycle(dir) {
+  const cur = currentVariant();
+  const idx = KEYS.indexOf(cur);
+  const next = KEYS[(idx + dir + KEYS.length) % KEYS.length];
+  setVariant(next);
+}
+
+document.getElementById('prev').addEventListener('click', () => cycle(-1));
+document.getElementById('next').addEventListener('click', () => cycle(1));
+document.addEventListener('keydown', (e) => {
+  const active = document.activeElement;
+  if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable)) return;
+  if (e.key === 'ArrowLeft') cycle(-1);
+  if (e.key === 'ArrowRight') cycle(1);
+});
+
+mount(currentVariant());
+</script>
+
+</body>
+</html>
