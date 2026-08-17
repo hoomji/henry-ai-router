@@ -29,6 +29,8 @@ measurement windows have — a fact that is easy to break invisibly.
 
 ## Repository map
 
+- Human-facing orientation: [`README.md`](README.md) — the outside view; keep its status
+  claims in step with the specification's delivery evidence
 - Architecture and boundaries: [`ARCHITECTURE.md`](ARCHITECTURE.md)
 - Gateway runtime: [`gateway/`](gateway/) — layout and seam rules in
   [`docs/design-docs/gateway-design.md`](docs/design-docs/gateway-design.md)
