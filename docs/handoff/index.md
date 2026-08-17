@@ -22,6 +22,15 @@ Read these four and you have the proposal. Everything else in this file is depth
 | 3 | [`ARCHITECTURE.md`](../../ARCHITECTURE.md) | How it is put together and what must not be broken | 10 min |
 | 4 | [`gateway-llm-comparison.md`](gateway-llm-comparison.md) | How this relates to `Gateway-LLM`, what overlaps, and what is still only here | 15 min |
 
+Two synthesis documents sit across that set rather than inside it. Neither is authoritative
+for any fact — both link to the document that owns it — so read them for the argument and the
+shape, and follow the links when a number matters.
+
+| Document | What it answers | Length |
+|---|---|---|
+| [`white-paper.md`](white-paper.md) | Why provider risk is a product, why the out-of-path bet is the mechanism, what that bet forecloses, and what the evidence does not establish | 20 min |
+| [`../design-docs/technical-blueprint.md`](../design-docs/technical-blueprint.md) | The target architecture across both runtimes and all five behaviors: five control loops, seven system invariants, where the deferred behaviors attach | 25 min |
+
 ## Product intent
 
 | Document | Scope | State |
@@ -40,6 +49,7 @@ section is the honest part: it names what is proven *and* what that proof does n
 |---|---|
 | [`ARCHITECTURE.md`](../../ARCHITECTURE.md) | System boundary, component map, dependency rules, the two declared concessions to them |
 | [Gateway design](../design-docs/gateway-design.md) | Module layout, adapter contract, routing seam, config surface — `Verified` 2026-08-15 |
+| [Technical blueprint](../design-docs/technical-blueprint.md) | The whole system, all five behaviors: control loops, system invariants, extension points — `Proposed`, target architecture |
 | [Core beliefs](../design-docs/core-beliefs.md) | The operating principles an agent assumes when no specific rule exists |
 | [`CONTEXT.md`](../../CONTEXT.md) | Glossary. *Target*, *workload*, *ranked list*, *cell*, *spend under management* — read this if a term in the spec reads oddly |
 | [Design docs index](../design-docs/index.md) | Verification status of each design document |

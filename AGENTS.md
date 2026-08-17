@@ -38,6 +38,11 @@ measurement windows have — a fact that is easy to break invisibly.
   [`docs/handoff/reading-guide.md`](docs/handoff/reading-guide.md) and the `Gateway-LLM`
   comparison in
   [`docs/handoff/gateway-llm-comparison.md`](docs/handoff/gateway-llm-comparison.md)
+- Synthesis over that set, authoritative for nothing and linking to the owner of every
+  fact: the white paper for technical evaluators at
+  [`docs/handoff/white-paper.md`](docs/handoff/white-paper.md), and the whole-system target
+  architecture across both runtimes and all five behaviors at
+  [`docs/design-docs/technical-blueprint.md`](docs/design-docs/technical-blueprint.md)
 - Architecture and boundaries: [`ARCHITECTURE.md`](ARCHITECTURE.md)
 - Gateway runtime: [`gateway/`](gateway/) — layout and seam rules in
   [`docs/design-docs/gateway-design.md`](docs/design-docs/gateway-design.md)
