@@ -14,6 +14,7 @@ Verification status vocabulary:
 |---|---|---|---|---|---|
 | [Core beliefs](core-beliefs.md) | Agent-first operating principles | Proposed | henry.tran@uniblock.dev | Unverified | None |
 | [Gateway design](gateway-design.md) | Module layout, adapter contract, routing seam, fail-open path, target, management, control-plane and reservation surfaces, config surface for `gateway/`, and the `connector/` sibling runtime | Verified | henry.tran@uniblock.dev | 2026-08-15 (connector/reservation tree) | Tree matches layout including `controlplane/` and `reservations/`, dependency rule and its two declared concessions, populated binding reason, `chooseProvider` signature and purity preserved, `npm --prefix gateway run e2e` 7 of 7, 203 gateway tests and 32 connector tests |
+| [Technical blueprint](technical-blueprint.md) | The whole system rather than one runtime: component topology, the five control loops, system-level invariants, state and durability at system level, where the deferred behaviors attach, and the system-level rejected alternatives | Proposed | henry.tran@uniblock.dev | Unverified | None. Its built-system content restates the `Verified` gateway design; its target-state content has nothing to verify against until behaviors 2, 3 and 5 exist |
 
 ## Entry contract
 

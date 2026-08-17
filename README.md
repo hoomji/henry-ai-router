@@ -79,6 +79,11 @@ that is what your machine has.
 
 Most of this repository is documentation, and it is indexed rather than browsed.
 
+**Reviewing this as a proposal?** [`docs/handoff/index.md`](docs/handoff/index.md) is a table
+of contents over every document here, and
+[`docs/handoff/reading-guide.md`](docs/handoff/reading-guide.md) walks them in order — 45
+minutes for the core path. Start there rather than with the table below.
+
 | Question | Where |
 |---|---|
 | What is this required to do for a user? | [`docs/product-specs/`](docs/product-specs/index.md) |

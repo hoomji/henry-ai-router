@@ -169,6 +169,20 @@ ADRs live at `docs/adr/NNNN-short-slug.md`.
 - [`0007`](docs/adr/0007-strain-contribution-is-a-condition-of-service.md) — contributing
   strain evidence is a condition of service, bounded to facts the provider side of the
   connection already observed.
+- [`0008`](docs/adr/0008-budget-enforcement-is-async-connector-side-by-default.md) —
+  *proposed*. Budget enforcement follows the same push-and-reconcile shape as routing:
+  overspend is bounded by `report_interval × max_burn_rate` rather than eliminated, and
+  synchronous denial is a separate opt-in tier.
+- [`0009`](docs/adr/0009-in-path-mode-is-a-gateway-operated-connector.md) — *proposed*.
+  In-path mode is a *connector the gateway operates*, consuming the same
+  `computeRankedList` and usage-ingestion path, so the out-of-path guarantee narrows to a
+  per-workload property rather than splitting into two products.
+- [`0010`](docs/adr/0010-provider-credential-custody-stays-with-the-customer.md) —
+  *proposed*. Provider credentials stay with the customer and never reach the gateway;
+  `0009`'s in-path mode is the only scoped exception.
+- [`0011`](docs/adr/0011-billing-unit-is-the-managed-workload.md) — *proposed*. The billing
+  unit is the managed *workload*, not the connector process, which decouples the invoice
+  from the customer's deployment topology.
 
 ## Domain language
 
