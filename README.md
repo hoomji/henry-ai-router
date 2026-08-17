@@ -10,9 +10,12 @@ that the product is the *risk*, not the plumbing: providers rate-limit, degrade,
 models, and go down, and today every customer discovers that alone, reacts after the
 failure, and pays an always-on middleman for the privilege.
 
-**Status: a working prototype of two of five behaviors, entirely against simulated providers
-on localhost.** Nothing is deployed, nothing has touched a real provider account, and no
-provider credential is needed to run any of it. See [Delivery
+**Status: a working prototype of two of five behaviors, and every check outside one opt-in
+command still runs against simulated providers on localhost.** Nothing is deployed. That one
+exception — `npm --prefix gateway run real-provider-check` — is credential-gated, never run
+by CI, and has reached a real provider (OpenRouter) and gotten a real response; see [the
+learning ledger](docs/harness/learning-ledger.md). It is a smoke test, not a measured
+capability floor: no capability floor has been measured. See [Delivery
 evidence](docs/product-specs/provider-risk-management-gateway.md#delivery-evidence) for what
 is proven and, more usefully, what that proof does not establish.
 

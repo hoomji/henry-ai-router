@@ -134,15 +134,17 @@ two-variable tracer setup still works; the full list for both runtimes is in
 [`AGENTS.md`](AGENTS.md).
 
 A stub upstream and a set of simulated providers under `gateway/src/dev/` serve canned and
-parameterized completions, so every check still runs offline against the working tree with
-no provider account involved. That is also the honest limit of the evidence: nothing here
-has been exercised against a real provider, and no measured capability floor exists.
+parameterized completions, so every check `scripts/check.py` runs stays offline with no
+provider account involved. One opt-in, credential-gated exception exists outside that gate:
+`npm --prefix gateway run real-provider-check` starts a real gateway, mints a connector
+token, and makes the connector place one real call against a real provider (OpenRouter, as
+of 2026-08-17 — see [the learning ledger](docs/harness/learning-ledger.md)). It is a smoke
+test, not a measured capability floor: no measured capability floor exists.
 
 The harness manifest declares `startable_runtime`, `automated_tests`, `management_surface`,
 `durable_state`, `target_routing_load_evidence`, `control_plane_push`, `connector_runtime`,
-`reservation_aware_routing`, and `connector_e2e_evidence` as verified, with commands and
-test files as evidence. `real_provider_verification` and `continuous_integration` are
-missing: all proof is simulated, and nothing runs these commands except a person.
+`reservation_aware_routing`, `connector_e2e_evidence`, `continuous_integration`, and
+`real_provider_verification` as verified, with commands and test files as evidence.
 
 ## Decisions
 

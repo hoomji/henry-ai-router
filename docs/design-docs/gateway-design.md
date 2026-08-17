@@ -9,9 +9,12 @@
   seam populates a binding reason over several candidates and kept its signature and purity
   through the reservation change; the load run demonstrates the split moving with the
   target; and the end-to-end run demonstrates the gateway staying out of the request path
-  while a connector serves it. What remains unverified is not in this document's scope:
-  nothing has run against a real provider, so every capability floor is unmeasured and all
-  evidence is simulated.
+  while a connector serves it. What remains unverified is not in this document's scope: a
+  reproducible, credential-gated check now reaches a real provider
+  (`npm --prefix gateway run real-provider-check`, reached OpenRouter on 2026-08-17 — see
+  [the learning ledger](../harness/learning-ledger.md)), but it is a smoke test, not a
+  measured capability floor. Every capability floor this design doc relies on is still
+  unmeasured and simulated.
 - Domain language: [`../../CONTEXT.md`](../../CONTEXT.md)
 - Review trigger: the first commit under `gateway/`, or any revision to the governing
   spec or ExecPlan below

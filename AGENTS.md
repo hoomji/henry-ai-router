@@ -13,8 +13,10 @@ reviewable. It also contains two runtimes:
   call itself, directly, obeying the ranked list the gateway pushed it. This is where
   provider calls actually happen.
 
-Nothing is deployed anywhere, and every check runs against simulated providers on
-localhost. No provider credential and no cloud account is needed for anything here.
+Nothing is deployed anywhere, and no provider credential or cloud account is needed for any
+command in this repository except one: `npm --prefix gateway run real-provider-check` is
+opt-in, requires `PROVIDER_API_KEY`, and is the only command that reaches a real provider.
+See [the learning ledger](docs/harness/learning-ledger.md) for why it exists.
 
 Both runtimes are deliberately small, and both hold the same constraint: `"type": "module"`,
 Node 24 or newer, built with `tsc`, and no runtime dependencies outside the Node standard
@@ -132,6 +134,14 @@ The gateway runtime has its own commands. `npm --prefix gateway install` is its 
   downstream is reading. Connector tokens are printed truncated. Set `GATEWAY_PROVIDERS` as
   the gateway had it, or the ranked list is computed against a catalogue the gateway was not
   running — the output names which source it used.
+- Real-provider check: `npm --prefix gateway run real-provider-check` — the one command
+  allowed to leave the laptop. It starts a real gateway, mints a connector token, and makes
+  the connector place exactly one real call against a real provider through
+  `connector/src/dev/realProviderProbe.js`, defaulting to a free OpenRouter model. Requires
+  `PROVIDER_API_KEY`; fails with remediation rather than skipping quietly when it is unset.
+  Never run by `scripts/check.py` or CI, and it is a smoke test, not a measured capability
+  floor — one passing call proves the path is reachable today, nothing about a percentile.
+  See [the learning ledger](docs/harness/learning-ledger.md) for why this exists.
 
 The connector runtime is a second package with its own install and build. Build before any
 of its run commands, for the same reason as the gateway: they execute compiled JavaScript.
@@ -146,6 +156,9 @@ of its run commands, for the same reason as the gateway: they execute compiled J
 - Streaming probe: `npm --prefix connector run stream-probe` — measures time-to-first-byte
   against a stub emitting chunks a second apart. A connector that quietly buffers passes
   every other check and fails this one, which is why it has its own command.
+- Real-provider probe: `npm --prefix connector run real-provider-probe` — makes exactly one
+  call and exits; not meant to be run alone, it is what the gateway's `real-provider-check`
+  spawns with credentials, a token and a real provider URL already in its environment.
 
 The connector's configuration is environment-only, and `connector/src/config.ts` is the one
 module that reads it. `GATEWAY_URL`, `GATEWAY_CONNECTOR_TOKEN` (the bearer token minted by

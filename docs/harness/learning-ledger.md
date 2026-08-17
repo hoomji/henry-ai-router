@@ -6,6 +6,60 @@ Record repeated friction only when it can improve a durable repository capabilit
 
 Newest first.
 
+### 2026-08-17 — a real provider call succeeded outside any reproducible check
+
+- Date: 2026-08-17
+- Observed friction: a manual, credential-gated run — gateway on `:8080` forwarding to
+  OpenRouter, a connector token minted via `POST /v1/admin/connectors`, the connector's
+  sample app calling a real provider — got a real `200` (~17s latency; free-tier models
+  are slow, worth knowing against any future latency target). That single fact made seven
+  living documents false the moment it happened:
+  [`README.md`](../../README.md), [`AGENTS.md`](../../AGENTS.md),
+  [`ARCHITECTURE.md`](../../ARCHITECTURE.md) (twice — the second instance also had an
+  unrelated stale claim that `continuous_integration` was `missing`, corrected in the same
+  pass), [`gateway-design.md`](../design-docs/gateway-design.md), and this repository's own
+  [`manifest.yaml`](manifest.yaml), all asserting some form of "nothing has touched a real
+  provider." This is the same class as the 2026-08-16 entry below, but that one was caught
+  by a human sweep after a milestone; this one was never going to be caught by
+  `scripts/docs-audit.py`'s claims pass, because the pass only knows a fixed list of
+  known-false strings and cannot see an ad hoc manual action that leaves no artifact in the
+  repository.
+- Frequency and impact: second occurrence of the class, first time the trigger was a live
+  event rather than a milestone. Impact is high for the same reason as the 2026-08-16 entry
+  — these are the first sentences of `README.md` and `AGENTS.md`.
+- Missing harness plane: hygiene, and specifically a gap the 2026-08-16 entry's fix does
+  not cover — that fix catches a document contradicting the *repository*, not a document
+  contradicting an event that happened outside any command the repository can see.
+- Chosen durable layer: script, same session. `gateway/src/dev/realProviderCheck.ts`
+  ([`npm --prefix gateway run real-provider-check`](../../gateway/src/dev/realProviderCheck.ts))
+  starts a real gateway, mints a connector token, and spawns
+  [`connector/src/dev/realProviderProbe.ts`](../../connector/src/dev/realProviderProbe.ts) —
+  a one-shot variant of `sampleApp.ts`/`e2eApp.ts` — to place exactly one real call through
+  the same `connector.call()` path those two exercise against stubs. Opt-in and
+  credential-gated on `PROVIDER_API_KEY`: absent, it fails with remediation rather than
+  skipping quietly, because the point of running it by hand is to find out whether a real
+  call still works. Never added to `scripts/check.py` or CI, for the same reason no
+  credential lives in this repository.
+- Change or decision not to encode: deliberately not folded into any existing dev script —
+  `sampleApp.ts` and `e2eApp.ts` both loop forever for a different audience (a person, or a
+  log-scraping e2e driver), and teaching either a bounded-count mode for this one caller
+  would couple two purposes that don't need to share code. Also deliberately a smoke test
+  only: it proves connectivity, not a latency or availability floor (see
+  [the capability-floors reference](../references/2026-08-15-provider-capability-floors.md))
+  — `real_provider_verification` records that distinction in its own comment rather than
+  letting a passing run imply more than it showed.
+- Owner: henry.tran@uniblock.dev
+- Closure evidence: run twice at this revision — `PROVIDER_API_KEY=<redacted>
+  npm --prefix gateway run real-provider-check` against OpenRouter's free
+  `google/gemma-4-26b-a4b-it:free` returned `PASS provider=fallback status=200 ms=2869`; the
+  same command against a deliberately wrong model name returned `FAIL status=400`, proving
+  the check can fail and not just always print PASS. `real_provider_verification` moved
+  `missing` → `verified` in [`manifest.yaml`](manifest.yaml) on that evidence. All seven
+  documents from the observed-friction note above were updated a second time to name the
+  command instead of describing a one-off manual run. `python scripts/docs-audit.py` and
+  `python scripts/check.py` both still pass.
+- Review date: 2026-11-15
+
 ### 2026-08-16 — documents kept their claims after the claims stopped being true
 
 - Date: 2026-08-16
