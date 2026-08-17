@@ -33,6 +33,11 @@ measurement windows have — a fact that is easy to break invisibly.
 
 - Human-facing orientation: [`README.md`](README.md) — the outside view; keep its status
   claims in step with the specification's delivery evidence
+- Table of contents over every document here, for a human reviewing the proposal:
+  [`docs/handoff/index.md`](docs/handoff/index.md), with a guided path in
+  [`docs/handoff/reading-guide.md`](docs/handoff/reading-guide.md) and the LLM Gateway V1
+  comparison in
+  [`docs/handoff/uniblock-llm-gateway-comparison.md`](docs/handoff/uniblock-llm-gateway-comparison.md)
 - Architecture and boundaries: [`ARCHITECTURE.md`](ARCHITECTURE.md)
 - Gateway runtime: [`gateway/`](gateway/) — layout and seam rules in
   [`docs/design-docs/gateway-design.md`](docs/design-docs/gateway-design.md)
