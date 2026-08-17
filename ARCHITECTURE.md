@@ -47,6 +47,13 @@ change that stops that happening leaves every provider `insufficient_data` forev
 `unmet` unreachable, and will not fail any unit test. See the connector ExecPlan's
 *Surprises & Discoveries*.
 
+**Infrastructure cost and capacity sizing for this push model are not documented anywhere
+in this repository.** There is no expected-connector-count projection, no per-connection
+memory/CPU budget for the held-open SSE sockets, and no hosting cost estimate for the
+gateway process. Before committing to a deployment target, size this from real connector
+growth assumptions rather than assuming the push model is free — it is cheap, but "cheap"
+has not been quantified.
+
 The data path reads an in-memory copy of the document, refreshed by polling. So a store
 outage or a broken management surface degrades only the control plane — writes fail and
 status may go stale — while forwarding continues. A `200` on `PUT /v1/targets` means
