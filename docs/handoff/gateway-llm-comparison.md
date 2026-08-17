@@ -210,6 +210,39 @@ why thresholds must be banded against a provider's own trailing baseline rather 
 absolutely, and why a routing decision that cannot state its binding reason should not be
 made. Those cost nothing to read now and are expensive to retrofit after a schema lands.
 
+## The objection that was raised inside Uniblock, and then withdrawn
+
+The strongest substantive challenge to this product's thesis came from the 2026-08-14 room,
+and it is worth answering even though the team that raised it no longer holds the line.
+
+Paraphrasing the positions on record: a JSON-RPC answer is provider-independent, so falling
+back is free — the price of Bitcoin is the same whoever serves it. A model answer is not.
+Routing to a different model produces different output and can break the calling system, even
+between same-tier models, and the great majority of real usage names exactly the model it
+wants. The conclusion drawn was that there should be **no fallback at all** for a named-model
+request.
+
+Two things follow, and they point in opposite directions.
+
+**The objection did not survive its own team's plan.** `FR-7` ships fallback to an alternative
+provider for the same model, and Stories 2.13 and 6.6 ship health-aware ordering so the
+healthy provider is tried first. So the argument, as applied, was narrower than it sounded: it
+was against substituting a *different model*, not against moving between *providers of the
+same model*.
+
+**That narrower version is also this repository's answer, and it was already the design.**
+`allowed_models` is a required, non-empty list, and listing several models is the customer's
+own assertion that they are interchangeable *for that workload*. The gateway routes only
+inside the blast radius the customer drew, never adapts a prompt when moving between two
+models they listed, and a customer who does not want a model's output removes it. Prompt
+translation exists for cross-model failover during an interception window, not for ordinary
+routing. And the common case is the *same* model on a different host, where the output concern
+largely disappears and the measured spread was 86% in p50 latency on a single day.
+
+The residual risk is unchanged by any of this: **no customer has ever declared an
+`allowed_models` list**, so the interchangeability assertion the whole answer rests on has
+never been made by anyone outside this repository.
+
 ## What each repository could take from the other, today
 
 **`henry-ai-router` → Gateway-LLM**
