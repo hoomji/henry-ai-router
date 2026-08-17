@@ -15,6 +15,22 @@ Three paths, depending on how much time you have:
 
 Bring a note of every place you disagree. The last step is what to do with those notes.
 
+### Two synthesis documents, and when to use them
+
+Two documents cut across this path rather than sitting inside it. Neither is authoritative
+for any fact — both link to the document that owns it — and both are written in ASD-STE100
+Simplified Technical English using the [`CONTEXT.md`](../../CONTEXT.md) glossary, so they read
+flatter than the documents they summarize.
+
+| Document | Use it |
+|---|---|
+| [`white-paper.md`](white-paper.md) | **Instead of steps 1, 3 and 6** when you have 15 minutes and want the argument end to end: the claim, the mechanism, the four things the mechanism prevents, the price, and what the evidence does not prove. Then come back to step 8, which it does not replace |
+| [`../design-docs/technical-blueprint.md`](../design-docs/technical-blueprint.md) | **Before step 9**, or instead of it if you are not reading code. It gives the five control loops, the seven invariants that no single file shows, and the attachment point of each unbuilt behavior |
+
+Read the specification itself, and not the white paper, if you intend to challenge a specific
+required behavior. The white paper compresses; the specification is what the product owes a
+customer.
+
 ---
 
 ## Step 1 — The bet, in five minutes
@@ -191,6 +207,10 @@ version, read the correction first.
   agreement. Long, and the *Common commands* section is the part to read.
 - [Gateway design](../design-docs/gateway-design.md) — module layout, the adapter contract,
   the routing seam, and the dependency rule with its two declared concessions.
+- [Technical blueprint](../design-docs/technical-blueprint.md) — the same system one level up:
+  both runtimes, the five control loops with their separate authorities and time bounds, and
+  the seven invariants that span components. Read its section 4 before you change anything,
+  because invariant 4 is the one that broke silently once.
 - The [connector ExecPlan](../exec-plans/completed/2026-08-15-connector-and-reservation-aware-routing.md),
   specifically *Surprises & Discoveries*. Short, and the best evidence in the repository that
   the harness catches real defects.

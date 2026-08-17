@@ -10,6 +10,9 @@
   `_bmad-output/build/sprint-status.yaml`, and the 2026-08-16 handoff logs
 - Extends: [#20](https://github.com/hoomji/henry-ai-router/issues/20), which compared this
   repository against the blockchain stack
+- The standalone case for this repository, which this document weighs against folding it in:
+  [`white-paper.md`](white-paper.md). Its section 5 is the honest half — the four things the
+  out-of-path structure costs — and is the part most relevant to the recommendation below
 
 **This supersedes an earlier draft of this document that compared against
 `uniblock-llm-gateway` and the 2026-08-14 LLM Gateway V1 wiki spec.** That comparison is

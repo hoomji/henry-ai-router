@@ -194,3 +194,18 @@ only: required behavior belongs in `docs/product-specs/`, decisions in `docs/adr
 [`docs/design-docs/index.md`](docs/design-docs/index.md) catalogues design documentation
 and its verification status. Design docs explain evolving system or feature designs;
 ADRs remain the decision history.
+
+Two documents sit one level above this map and are worth naming here, because a reader of
+this file is usually looking for one of them and finds the module rules instead:
+
+- [`docs/design-docs/technical-blueprint.md`](docs/design-docs/technical-blueprint.md) —
+  `Proposed`. The whole system rather than the component boundary: both runtimes, the five
+  control loops and their separate authorities, the invariants that span components, and where
+  each unbuilt behavior attaches. This map owns the boundary; that document owns the behavior
+  across it.
+- [`docs/handoff/white-paper.md`](docs/handoff/white-paper.md) — why the out-of-path structure
+  this map describes is a product decision rather than an implementation detail, and the four
+  things it costs.
+
+Neither is authoritative for anything this file states. Where they disagree with this map,
+this map is correct.

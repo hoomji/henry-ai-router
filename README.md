@@ -82,11 +82,16 @@ Most of this repository is documentation, and it is indexed rather than browsed.
 **Reviewing this as a proposal?** [`docs/handoff/index.md`](docs/handoff/index.md) is a table
 of contents over every document here, and
 [`docs/handoff/reading-guide.md`](docs/handoff/reading-guide.md) walks them in order — 45
-minutes for the core path. Start there rather than with the table below.
+minutes for the core path. Start there rather than with the table below. If you would rather
+have the argument in one document than walk nine, read
+[`docs/handoff/white-paper.md`](docs/handoff/white-paper.md) instead — 15 minutes, and it is
+explicit about what the evidence does not establish.
 
 | Question | Where |
 |---|---|
 | What is this required to do for a user? | [`docs/product-specs/`](docs/product-specs/index.md) |
+| Why is this a product, and what does the architecture cost? | [`docs/handoff/white-paper.md`](docs/handoff/white-paper.md) |
+| What is the whole system meant to become? | [`docs/design-docs/technical-blueprint.md`](docs/design-docs/technical-blueprint.md) |
 | How is it put together, and what must not be broken? | [`ARCHITECTURE.md`](ARCHITECTURE.md) |
 | Why was this decided this way? | [`docs/adr/`](docs/adr/) |
 | What do these words mean here? | [`CONTEXT.md`](CONTEXT.md) |
