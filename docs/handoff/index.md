@@ -7,7 +7,7 @@ from GitHub.
 - **New here?** Read [`reading-guide.md`](reading-guide.md) — it walks this set in order and
   says what to challenge at each stop. Budget 45 minutes for the core path.
 - **Deciding whether to build it?** Go straight to the [Decisions still open](#decisions-still-open)
-  table and [`uniblock-llm-gateway-comparison.md`](uniblock-llm-gateway-comparison.md).
+  table and [`gateway-llm-comparison.md`](gateway-llm-comparison.md).
 - **One-line status:** two of five product behaviors are built and proven by commands;
   nothing is deployed; every check but one opt-in command runs against simulated providers.
 
@@ -20,7 +20,7 @@ Read these four and you have the proposal. Everything else in this file is depth
 | 1 | [`README.md`](../../README.md) | What is this, what is proven, what is not | 5 min |
 | 2 | [`docs/product-specs/provider-risk-management-gateway.md`](../product-specs/provider-risk-management-gateway.md) | What the product must do for a user, and how you would know it did | 30 min |
 | 3 | [`ARCHITECTURE.md`](../../ARCHITECTURE.md) | How it is put together and what must not be broken | 10 min |
-| 4 | [`uniblock-llm-gateway-comparison.md`](uniblock-llm-gateway-comparison.md) | How this relates to `uniblock-llm-gateway` and the 2026-08-14 LLM Gateway V1 spec | 10 min |
+| 4 | [`gateway-llm-comparison.md`](gateway-llm-comparison.md) | How this relates to `Gateway-LLM`, what overlaps, and what is still only here | 15 min |
 
 ## Product intent
 
@@ -133,7 +133,7 @@ code, with where the argument already is.
 | Is soft-budget-by-default viable, or does the market need hard budget? | [#21](https://github.com/hoomji/henry-ai-router/issues/21), [ADR 0008](../adr/0008-budget-enforcement-is-async-connector-side-by-default.md) | If most of the market needs hard budget, the central architectural bet is wrong |
 | Which rate structure and which rates? | [#22](https://github.com/hoomji/henry-ai-router/issues/22), [pricing strategy](../product-specs/pricing-strategy.md), [ADR 0011](../adr/0011-billing-unit-is-the-managed-workload.md) | No number in the draft came from a customer or from measured infra cost |
 | Do we take custody of provider credentials to make onboarding easier? | [#18](https://github.com/hoomji/henry-ai-router/issues/18) Phase 3, [ADR 0010](../adr/0010-provider-credential-custody-stays-with-the-customer.md) | Trades real liability for onboarding friction |
-| Does this ship as its own product, or fold into the LLM Gateway V1 effort? | [#20](https://github.com/hoomji/henry-ai-router/issues/20), [comparison](uniblock-llm-gateway-comparison.md) | The two efforts overlap on the control plane and diverge on the data path |
+| Does this ship standalone, fold into `Gateway-LLM` as its routing layer, or run as one policy core with two hosts? | [#20](https://github.com/hoomji/henry-ai-router/issues/20), [comparison](gateway-llm-comparison.md) | `Gateway-LLM` is acquiring every part of this product except target-state routing |
 | What is the productionization sequence? | [#18](https://github.com/hoomji/henry-ai-router/issues/18) | Phases 0–4, multi-quarter; Phase 0 is a design partner and costs almost nothing |
 | Infra cost and capacity for the push model | [`ARCHITECTURE.md`](../../ARCHITECTURE.md) flags it as undocumented | Blocks any per-connector rate grounded in our own cost |
 

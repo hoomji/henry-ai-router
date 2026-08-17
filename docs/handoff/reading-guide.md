@@ -9,8 +9,8 @@ Three paths, depending on how much time you have:
 
 | You have | Do steps | You end up able to |
 |---|---|---|
-| 10 minutes | 1, 2, 7 | State the bet and the top three open questions |
-| 45 minutes | 1–7 | Argue the product's merits and challenge its evidence |
+| 10 minutes | 1, 2, 8 | State the bet, and know what `Gateway-LLM` already covers |
+| 45 minutes | 1–8 | Argue the product's merits and challenge its evidence |
 | Half a day | 1–9 | Review the code and decide the productionization sequence |
 
 Bring a note of every place you disagree. The last step is what to do with those notes.
@@ -57,7 +57,7 @@ Two consequences do most of the work in every later document:
 
 **Challenge this.** The whole product rests on customers installing code in their own
 application. That is a heavier ask than changing a base URL — which is exactly what the
-`uniblock-llm-gateway` effort asks for instead. Step 8 puts those two side by side.
+`Gateway-LLM` effort asks for instead. Step 8 puts those two side by side.
 
 ## Step 3 — What the product must actually do
 
@@ -162,17 +162,28 @@ four open issues:
 If you read nothing else after this step, read #18's Phase 0. It is the decision with the
 best ratio of information gained to money spent.
 
-## Step 8 — How this relates to the LLM Gateway V1 effort
+## Step 8 — How this relates to Gateway-LLM
 
-Read [`uniblock-llm-gateway-comparison.md`](uniblock-llm-gateway-comparison.md).
+Read [`gateway-llm-comparison.md`](gateway-llm-comparison.md).
 
-Two efforts inside the same company are building something with "gateway" in the name and
-they are not the same product. That document sets them side by side against the 2026-08-14
-LLM Gateway V1 product spec and ExecPlan, names the four places they genuinely collide, and
-recommends what to do about each.
+**Do not skip this one, and do not read it last if you are deciding whether to fund this
+repository.** It is the step most likely to change your answer.
 
-Read this before forming a view on whether to fund this repository, because the honest answer
-depends on the other effort's roadmap and not only on this one's merits.
+Two efforts inside the same company are building something with "gateway" in the name.
+`Gateway-LLM` is in the request path by construction, holds provider credentials, bills per
+request, and — since the plan the wiki recorded — has acquired fallback, health-aware
+provider ordering, upstream capacity management and per-workspace spend limits. That is most
+of provider risk management, arrived at from the platform's own side rather than the
+customer's.
+
+The document names the four real overlaps, the five things that are still only here, and the
+strategic question that follows: stay standalone, become the target-state routing layer
+inside `Gateway-LLM`, or run one policy core across two hosts. It recommends the second and
+says what would make it wrong.
+
+It also opens by correcting an earlier version of itself, which compared against a spec
+rather than against the code and reached a more comfortable conclusion. If you read that
+version, read the correction first.
 
 ## Step 9 — Only if you are reviewing the build
 
