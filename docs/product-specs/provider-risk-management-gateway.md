@@ -1,8 +1,8 @@
 # Provider risk management gateway
 
-- State: `Draft`
+- State: `Accepted` — partially delivered; see [Delivery evidence](#delivery-evidence)
 - Owner: henry.tran@uniblock.dev
-- Reviewed: 2026-08-15
+- Reviewed: 2026-08-16
 - Sources: idea record formerly at `IDEA.md` (five random-stimulus ideas and their
   meta-pattern, reproduced below so this specification stands alone)
 - Supersedes: none
@@ -830,23 +830,23 @@ behavior.
 
 ## Acceptance criteria
 
-- [ ] A customer can state a per-workload target over `p95_ms`,
+- [x] A customer can state a per-workload target over `p95_ms`,
       `cost_per_1k_tokens_usd`, and `success_rate` and observe the gateway change provider
       mix in response to drifting provider performance without a routing rule (behavior 1).
-- [ ] A target no allowed provider can satisfy is rejected when written, with a report
+- [x] A target no allowed provider can satisfy is rejected when written, with a report
       naming the dimension, the requested value, the best achievable value and the
       provider achieving it, and the provenance and age of the capability floor the
       rejection rests on (behavior 1, `infeasible_by_declaration`).
-- [ ] A target whose candidate capability floors have all gone stale is accepted rather
+- [x] A target whose candidate capability floors have all gone stale is accepted rather
       than rejected, and the abstention is observable (behavior 1).
-- [ ] A capability floor correction leaves every existing target document valid and in
+- [x] A capability floor correction leaves every existing target document valid and in
       force, flags the affected workloads on the status resource, and notifies only a
       workload already `unmet` on the corrected dimension (behavior 1).
-- [ ] A target that stops holding at runtime raises `unmet` after two consecutive missed
+- [x] A target that stops holding at runtime raises `unmet` after two consecutive missed
       windows and clears after two consecutive held windows, visible on the status
       resource, the notification, and the response header, with a per-provider reason for
       each rejected candidate (behavior 1, `unmet`).
-- [ ] When ceilings conflict, the lowest-priority ceiling yields and is reported; a
+- [x] When ceilings conflict, the lowest-priority ceiling yields and is reported; a
       dimension marked hard fails the request instead of being breached (behavior 1).
 - [ ] Traffic outside an interception window reaches the provider without gateway
       interception; every intercepted request carries a tag identifying its window, and
@@ -878,21 +878,21 @@ behavior.
       cell per bucket (behavior 3).
 - [ ] A connected customer whose connector reports no strain contributions is shown as
       non-contributing on the status resource, and continues to receive routing (behavior 3).
-- [ ] A declared reservation that traffic is not addressing is surfaced to the customer,
+- [x] A declared reservation that traffic is not addressing is surfaced to the customer,
       and eligible traffic is subsequently routed onto it ahead of on-demand capacity,
       with no provider credential granted to the gateway (behavior 4).
 - [ ] A prompt authored for model A, routed to model B, produces the intended behavior on
       model B or an explicit fallback notice — never a silent semantic change (behavior 5).
-- [ ] A customer's traffic reaches providers directly through the *connector* while the
+- [x] A customer's traffic reaches providers directly through the *connector* while the
       gateway is out of the request path, with the connector obeying the *ranked list* the
       gateway pushed and acknowledging the *directive* that delivered it (connector).
-- [ ] A workload in `unmet` carries the target-state response header on requests the gateway
+- [x] A workload in `unmet` carries the target-state response header on requests the gateway
       never saw, and the status resource and that header agree (connector, behavior 1).
-- [ ] Token counts reported by the connector produce a *spend under management* figure for a
+- [x] Token counts reported by the connector produce a *spend under management* figure for a
       connected customer who is not being billed (connector, pricing model).
 - [ ] Below the cohort threshold, every *interception window* is classed `observed` and no
       window opens on cohort evidence (behavior 2 under the behavior 3 deferral).
-- [ ] With the gateway down, customer traffic still reaches the configured provider
+- [x] With the gateway down, customer traffic still reaches the configured provider
       (fail-open boundary).
 
 ## Open product decisions
@@ -910,5 +910,59 @@ behavior.
 
 ## Delivery evidence
 
-Not delivered. This repository currently contains no implementation; this specification
-promotes the idea record to required product behavior for a future implementation.
+Partially delivered as of 2026-08-16, at `e20ebea` on `master`. Behavior 1's decision
+engine, the *connector*, and behavior 4 are implemented and have executable proof.
+Behaviors 2, 3 and 5 are unclaimed, on the triggers recorded in [Behavior sequence and
+deferrals](#behavior-sequence-and-deferrals).
+
+Two ExecPlans carry the work and their own acceptance evidence:
+[`2026-08-14-provider-risk-gateway-tracer.md`](../exec-plans/completed/2026-08-14-provider-risk-gateway-tracer.md)
+(M1 fail-open pass-through, M2 target-state routing) and
+[`2026-08-15-connector-and-reservation-aware-routing.md`](../exec-plans/completed/2026-08-15-connector-and-reservation-aware-routing.md)
+(the connector, the gateway as a control plane, reservation-aware routing).
+
+The named proof artifacts are commands, not prose:
+
+| Artifact | What it proves |
+|---|---|
+| `npm --prefix gateway run load` | Setting a target moves the provider mix with no routing rule configured; exits non-zero on a flat split |
+| `npm --prefix gateway run e2e` | Seven end-to-end checks against stub providers, including `unmet` reached on connector reports with zero in-path gateway requests |
+| `npm --prefix gateway test`, `npm --prefix connector test` | 240 unit tests across both runtimes |
+| `python scripts/check.py` (add `--e2e`) | The repository gate; runs both suites, and is demonstrated to fail on a failing test |
+| `.github/workflows/gate.yml` | Both jobs green on a GitHub runner (PR [#15](https://github.com/hoomji/henry-ai-router/pull/15)) — the commands work off the machine they were written on |
+
+Criteria proven by that evidence:
+
+- All six behavior-1 criteria. Feasibility rejection with its disclosed basis, the
+  stale-floor abstention, and the floor correction that leaves targets in force while
+  flagging affected workloads are in `gateway/src/targets/feasibility.ts` and
+  `gateway/src/targets/service.ts`, covered by `gateway/test/feasibility.test.ts` and
+  `gateway/test/targetRouting.test.ts`. The two-window `unmet` hysteresis and the ceiling
+  conflict in which the lowest-priority ceiling yields while a hard dimension truncates the
+  candidate list are in `gateway/src/targets/unmet.ts` and
+  `gateway/src/routing/chooseProvider.ts`, covered by `gateway/test/chooseProvider.test.ts`.
+- The three connector criteria: traffic reaching providers directly while the gateway is
+  out of the path and obeying a pushed ranked list it acknowledges; a workload in `unmet`
+  carrying the target-state header on a request the gateway never saw; and token counts
+  producing a *spend under management* figure. Checks 1–7 of the e2e run.
+- The behavior-4 criterion: an unaddressed declared reservation surfaced with its call-site
+  cause, and eligible traffic then routed onto it without a provider credential and without
+  leaving `allowed_models`. `gateway/src/reservations/`, `gateway/test/reservations.test.ts`,
+  and e2e check 6.
+- The fail-open boundary criterion: with the gateway killed, the sample application keeps
+  reaching its provider.
+
+What this evidence does **not** establish, and no reader should infer:
+
+- **Every run is against stub providers on localhost.** No provider credential, no
+  deployment, no cloud account. The capability catalogue's realistic floors are plausible
+  numbers, not measurements against a real provider.
+- **`success_rate` is measured and honored but never driven to breach** by any verification
+  artifact; the two dimensions with named artifacts are `p95_ms` and
+  `cost_per_1k_tokens_usd`.
+- **The connector contributes strain evidence but aggregates and discloses nothing**, so no
+  behavior-3 criterion is claimed by it.
+- **No pricing-model criterion is claimed.** The availability credit, invoice invariance,
+  and window records depend on behavior 2.
+- **CI cannot be made required** on this repository's plan, so a red run does not block a
+  merge.

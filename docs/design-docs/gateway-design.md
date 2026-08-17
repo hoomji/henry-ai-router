@@ -687,8 +687,11 @@ Every unit test passed while that defect was live.
 State moved to `Verified` on the strength of those four. Two limits belong next to the
 claim rather than buried under it. All of it is simulated: no run has touched a real
 provider, so every capability floor is unmeasured and the `measured` provenance tier is
-empty in practice. And nothing runs these checks except a person — there is no CI, so
-"verified" means verified on the date stamped above and not continuously.
+empty in practice. And the continuity of that verification is bounded: since 2026-08-16,
+[`.github/workflows/gate.yml`](../../.github/workflows/gate.yml) runs the gate and the
+end-to-end job on every push and pull request, so these checks no longer depend on a person
+remembering — but the checks cannot be made *required* on this repository's plan, so a red
+run does not block a merge.
 
 Revision note: 2026-08-15 — reconciled with the completed connector and reservation ExecPlan
 ([`../exec-plans/completed/2026-08-15-connector-and-reservation-aware-routing.md`](../exec-plans/completed/2026-08-15-connector-and-reservation-aware-routing.md)).

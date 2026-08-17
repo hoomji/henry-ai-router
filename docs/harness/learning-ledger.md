@@ -6,6 +6,41 @@ Record repeated friction only when it can improve a durable repository capabilit
 
 Newest first.
 
+### 2026-08-16 — documents kept their claims after the claims stopped being true
+
+- Date: 2026-08-16
+- Observed friction: a human reader found
+  [`provider-risk-management-gateway.md`](../product-specs/provider-risk-management-gateway.md)
+  still saying "this repository currently contains no implementation" two milestones after
+  the gateway and the connector shipped. Auditing for the same class found a second live
+  one immediately: [`gateway-design.md`](../design-docs/gateway-design.md) still said
+  "there is no CI". Both files passed every gate check on the day they were false — the
+  links resolved, the manifest was consistent, both suites were green.
+- Frequency and impact: second occurrence of the *class* — a document whose text stops
+  matching the repository — after the stale path inside a TypeScript comment recorded
+  below, which deliberately deferred enforcement to a second occurrence. Impact is high for
+  a repository that is mostly documentation: a false spec misroutes the next plan, and the
+  delivery-status claim is the single sentence a reader trusts most.
+- Missing harness plane: hygiene — nothing detected staleness at all, by age or by
+  contradiction.
+- Chosen durable layer: a script plus a routine, not a gate. `scripts/docs-audit.py` makes
+  six mechanical passes (contradicted claims, index coverage, orphans, `Reviewed:` age,
+  moved-ExecPlan pointers across Markdown/YAML/TypeScript/Python, placeholder markers) and
+  [`docs-audit.md`](docs-audit.md) carries the four passes that need a reader. Advisory by
+  default because "stale" is a judgement; `--strict` is the reviewer's switch. Deliberately
+  *not* added to `scripts/check.py`: a gate that fails on a judgement call teaches people to
+  route around the gate, which costs more than the drift.
+- Change or decision not to encode: both false claims corrected; the spec's delivery
+  evidence now names its artifacts and states what they do not prove. The pointers pass
+  discharges the deferral recorded in the stale-path entry below, one language-agnostic
+  regex rather than the comment-aware parser that entry judged too expensive.
+- Owner: henry.tran@uniblock.dev
+- Closure evidence: `python scripts/docs-audit.py --strict` exits 0 across 33 files. Proven
+  negatively: appending "This repository currently contains no implementation." to
+  [`tracer-workflow.md`](tracer-workflow.md) made it report that line and fail. It found the
+  `gateway-design.md` CI claim on its first real run, which a human sweep had missed.
+- Review date: 2026-11-16
+
 ### 2026-08-16 — CI was declared as capability before it had ever run
 
 - Date: 2026-08-16
