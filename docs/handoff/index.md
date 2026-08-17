@@ -24,12 +24,14 @@ Read these four and you have the proposal. Everything else in this file is depth
 
 Two synthesis documents sit across that set rather than inside it. Neither is authoritative
 for any fact — both link to the document that owns it — so read them for the argument and the
-shape, and follow the links when a number matters.
+shape, and follow the links when a number matters. Both are written in ASD-STE100 Simplified
+Technical English using the [`CONTEXT.md`](../../CONTEXT.md) glossary, so they read flatter
+than the documents they summarize; that is deliberate.
 
 | Document | What it answers | Length |
 |---|---|---|
-| [`white-paper.md`](white-paper.md) | Why provider risk is a product, why the out-of-path bet is the mechanism, what that bet forecloses, and what the evidence does not establish | 20 min |
-| [`../design-docs/technical-blueprint.md`](../design-docs/technical-blueprint.md) | The target architecture across both runtimes and all five behaviors: five control loops, seven system invariants, where the deferred behaviors attach | 25 min |
+| [`white-paper.md`](white-paper.md) | Why provider risk is a product, why the out-of-path choice is the mechanism, what that choice prevents, and what the evidence does not establish | 15 min |
+| [`../design-docs/technical-blueprint.md`](../design-docs/technical-blueprint.md) | The target architecture across both runtimes and all five behaviors: five control loops, seven system invariants, where the deferred behaviors attach | 20 min |
 
 ## Product intent
 

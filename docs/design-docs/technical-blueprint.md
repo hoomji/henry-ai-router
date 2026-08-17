@@ -1,524 +1,500 @@
-# Technical blueprint: the whole system, all five behaviors
+# Technical blueprint: the whole system and the five behaviors
 
-- State: `Proposed` — describes the target architecture, not the current tree. Sections
-  after [Status](#status) read as intended end state.
+- State: `Proposed`. This document gives the target architecture. It does not give the
+  current tree. Each section after [Status](#status) gives the target architecture.
 - Owner: henry.tran@uniblock.dev
-- Last verified: Unverified. The parts of this document that describe built code are
-  restatements of [`gateway-design.md`](gateway-design.md), which is `Verified`; the parts
-  that describe unbuilt behaviors have nothing to verify against yet.
-- Domain language: [`../../CONTEXT.md`](../../CONTEXT.md)
-- Governing spec: [`../product-specs/provider-risk-management-gateway.md`](../product-specs/provider-risk-management-gateway.md)
-- Review trigger: the first commit implementing behavior 2, 3 or 5; the acceptance of any of
-  ADRs 0008–0011; or a revision to the governing spec's *Behavior sequence and deferrals*
-- Companion: [`../handoff/white-paper.md`](../handoff/white-paper.md) — the argument this
-  design serves
+- Last verified: Unverified. The parts about built code repeat
+  [`gateway-design.md`](gateway-design.md), which is `Verified`. The parts about behaviors 2,
+  3 and 5 have no code to verify.
+- Specification: [`../product-specs/provider-risk-management-gateway.md`](../product-specs/provider-risk-management-gateway.md)
+- Review trigger: the first commit for behavior 2, 3 or 5; the acceptance of ADR 0008, 0009,
+  0010 or 0011; a change to the specification section *Behavior sequence and deferrals*
+- Companion: [`../handoff/white-paper.md`](../handoff/white-paper.md)
+- Language: ASD-STE100 Simplified Technical English. The terms in *italics* are defined in
+  [`../../CONTEXT.md`](../../CONTEXT.md).
 
-## Scope, and how this differs from the gateway design doc
+## Scope
 
-[`gateway-design.md`](gateway-design.md) scopes **one runtime** — `gateway/` — and
-explicitly does not design behaviors 2 through 5, whose product decisions were open when it
-was written. This document scopes the **whole system**: both runtimes, the control loops
-that span them, and where each deferred behavior lands.
+[`gateway-design.md`](gateway-design.md) has the scope of one runtime. That runtime is
+`gateway/`. That document does not design behaviors 2 to 5.
 
-The division of labor is strict, because duplicating a fact creates two facts that will
-disagree:
+This document has the scope of the whole system. It covers both runtimes, the control loops
+between them, and the attachment point of each unbuilt behavior.
 
-- Module layout, the provider adapter contract, the routing seam's signature and purity
-  argument, the store's durability table, and the config surface belong to
-  [`gateway-design.md`](gateway-design.md). This document links to them and does not restate
-  them as fact.
-- Required behavior belongs to the [product spec](../product-specs/provider-risk-management-gateway.md).
-- Hard-to-reverse trade-offs belong to [`../adr/`](../adr/).
-- The top-level component map belongs to [`../../ARCHITECTURE.md`](../../ARCHITECTURE.md).
+The division is strict. A duplicate fact makes two facts, and the two facts then disagree.
 
-What is genuinely this document's own: the control-loop decomposition in section 3, the
-system-level invariant list in section 4, the extension points in section 8, and the
-system-level rejected alternatives in section 9.
+- The module layout, the provider adapter contract, the routing function and the durability
+  table belong to [`gateway-design.md`](gateway-design.md).
+- The necessary behavior belongs to the
+  [specification](../product-specs/provider-risk-management-gateway.md).
+- A trade-off that is difficult to reverse belongs to an ADR in [`../adr/`](../adr/).
+- The component map belongs to [`../../ARCHITECTURE.md`](../../ARCHITECTURE.md).
+
+Four parts are new in this document: the control loops in section 3, the invariants in
+section 4, the attachment points in section 8, and the alternatives in section 9.
 
 ## Status
 
-Everything after this section describes the target architecture. This is the one place that
-says what exists.
+Each section after this one gives the target architecture. This section gives the current
+state.
 
-| Behavior | Target-state content | Status |
+| Behavior | Content | Status |
 |---|---|---|
-| 1 — Target-state routing | Declared outcome per workload, declaration-time feasibility, rolling windows, `unmet` state machine, ranked-list push | **Implemented**, six acceptance criteria proven |
-| Connector (prerequisite, not a behavior) | Customer-installed component that calls providers directly, obeys the ranked list, relays streams, reports usage | **Implemented**, three criteria proven |
-| 4 — Reservation-aware routing | Declared reservation surfaced when unaddressed; eligible traffic routed onto it | **Implemented**, one criterion proven |
-| 2 — Strain-triggered interception | Auditable interception window, per-request tag, gateway in the path only inside a window | **Specified, not built.** Needs the gateway to hold a provider credential; `anticipatory` windows need behavior 3 |
-| 3 — Collective strain signals | Cross-customer aggregate, banded disclosure, cohort-driven shifts | **Specified, not built.** Deferred on ~10 concurrently connected customers per cell |
-| 5 — Semantic-fidelity prompt translation | Prompt adapted on cross-model failover, with an explicit no-faithful-translation fallback | **Specified only in outline.** Deferred behind behavior 2 |
-| Pricing model | Flat subscription on spend under management, availability credit, invoice invariance | **Meter implemented; no pricing criterion claimed.** Rate structure open (#22) |
-| In-path mode | A connector the gateway operates, same policy core | **Proposed** ([ADR 0009](../adr/0009-in-path-mode-is-a-gateway-operated-connector.md)), undecided |
+| 1 — Routing to a stated outcome | A *target* for each *workload*, the feasibility check, the *windows*, the *unmet* state machine, the push of a *ranked list* | **Built.** Six criteria are proved |
+| The *connector* (a necessary component and not a behavior) | It calls *providers*, obeys the *ranked list*, passes streams through, and reports token counts | **Built.** Three criteria are proved |
+| 4 — Routing for a *reservation* | The gateway shows an unaddressed reservation and routes eligible traffic to it | **Built.** One criterion is proved |
+| 2 — An *interception window* from *provider strain* | An auditable window, a header on each intercepted response, the gateway in the path only in a window | **Specified. Not built.** The gateway must hold a provider credential. An `anticipatory` *evidence class* needs behavior 3 |
+| 3 — Collective signals | The cross-customer aggregate, the disclosure of a *band*, routing from *cohort* evidence | **Specified. Not built.** It waits for approximately 10 customers for each *cell* |
+| 5 — Prompt translation | The gateway adapts a prompt for a different model and reports a failure to translate | **In outline only.** It waits for behavior 2 |
+| The price model | One flat subscription on *spend under management*, a credit, one invoice for equal traffic | **The meter is built. No criterion is claimed.** The rate structure is open in issue #22 |
+| The gateway operates a connector | The same policy and the same *ranked list* | **Proposed.** See [ADR 0009](../adr/0009-in-path-mode-is-a-gateway-operated-connector.md) |
 
-Two limits qualify every "implemented" above and are not repeated later: every run is
-against simulated providers on localhost, and no capability floor has ever been measured.
-Details in the spec's
+Two limits apply to each "built" item above. Each run uses simulated providers on one host.
+No *capability floor* is measured. See
 [Delivery evidence](../product-specs/provider-risk-management-gateway.md#delivery-evidence).
 
-## 1. Component topology
+## 1. The components
 
-    ┌─ customer's application ─────────────┐
+    ┌─ the customer's application ─────────┐
     │                                      │
     │   call site ── connector ────────────────────────▶ provider  (customer credential)
     │                   │  ▲                │
     └───────────────────┼──┼────────────────┘
                         │  │
-         usage reports  │  │  ranked lists + directives (SSE, polling fallback)
+         usage reports  │  │  a directive with a ranked list (SSE, or a poll)
                         ▼  │
-    ┌─ gateway: control plane ─────────────────────────────────────────┐
-    │  connector edge ─▶ usage ingestion ─▶ measurement windows        │
-    │  management edge ─▶ target document ─▶ feasibility check         │
-    │  routing seam (pure) ─▶ ranked list ─▶ directive scheduler       │
-    │  unmet state machine ─▶ status resource + signed notification    │
-    │  retained data path (behavior 2 only) ────────────────▶ provider │
+    ┌─ the gateway: a control plane ───────────────────────────────────┐
+    │  connector surface ─▶ usage input ─▶ windows                     │
+    │  management surface ─▶ target document ─▶ feasibility check       │
+    │  routing function (pure) ─▶ ranked list ─▶ directive scheduler    │
+    │  unmet state machine ─▶ status resource + signed notification     │
+    │  retained data path (behavior 2 only) ────────────────▶ provider  │
     └──────────────────┬───────────────────────────────────────────────┘
                        │
-              store (targets, reservations, window summaries, unmet
-              state, decision receipts, connector tokens, usage)
+              the target store: targets, reservations, window summaries,
+              unmet state, decision receipts, connector tokens, usage
                        │
-              capability catalogue: measured (in process) +
-              generated artifact for the unmeasured tiers
+              the capability catalogue: a measured tier in the process,
+              and a generated artifact for each other tier
 
-Five components, and what each is authoritative for:
+Five components. Each component has one authority.
 
-| Component | Authoritative for | Never does |
+| Component | The authority | It must not |
 |---|---|---|
-| **Connector** | Making the provider call; relaying streams; the `unmet` response header; reporting usage and strain contributions | Hold routing policy; evaluate a target; hold more than "on error, try the next in the list" |
-| **Control plane** | Routing policy; feasibility; measurement; `unmet`; disclosure; the ranked list and its binding reason | Carry traffic in normal operation; hold a provider credential (except in-path mode) |
-| **Store** | The target document, the reservation document, `unmet` state, decision receipts, connector identity | Sit on the request path, or be read synchronously while serving one |
-| **Capability catalogue** | What a provider *plausibly can* do, per `(model, host, region, service_tier)`, with provenance and age | Serve as a billing rate; be trusted when every tier for a key has expired |
-| **Rate card** | Billing rates, forward-only | Be corrected backwards, or abstain |
+| **Connector** | The call to the provider, the stream, the *unmet* header, the usage reports and the *strain contribution* | Hold routing policy or examine a *target* |
+| **Control plane** | Routing policy, feasibility, measurement, *unmet*, disclosure, the *ranked list* and its *binding reason* | Carry traffic in normal operation, or hold a provider credential |
+| **Target store** | The *target document*, the reservation document, *unmet* state, *decision receipts*, connector identity | Be on the request path, or be read during a request |
+| **Capability catalogue** | What a provider can do, for each `(model, host, region, service_tier)`, with *provenance* | Be a price, or be used after each tier is stale |
+| **Rate card** | Prices, forward only | Change backwards, or *abstain* |
 
-Two credential boundaries are load-bearing rather than incidental:
+Two credential boundaries are important:
 
-- **Provider credentials stay with the customer**
-  ([ADR 0010](../adr/0010-provider-credential-custody-stays-with-the-customer.md)). The
-  connector reads the credential from the customer's own environment and uses it in a call
-  the customer's own process makes. The only proposed exception is in-path mode, where the
-  gateway is the endpoint making the upstream call and therefore must hold something.
-- **Gateway secrets live in configuration, never in the store.** The notification signing
-  secret and the admin token that guards connector minting are neither logged nor returned by
-  any endpoint. In the store, every backup, dump, and document read path would become a
-  secret-handling path.
+- **The customer keeps the provider credential.** See
+  [ADR 0010](../adr/0010-provider-credential-custody-stays-with-the-customer.md). The
+  connector reads the credential from the customer's own environment. The customer's own
+  process makes the call. The one proposed exception is a connector that the gateway
+  operates, because that gateway makes the call.
+- **The secrets of the gateway stay in the configuration surface.** The notification key and
+  the admin token are not in the *target store*. No log and no endpoint gives them. In the
+  store, each backup and each read path becomes a path for a secret.
 
-## 2. Two runtimes, kept apart on purpose
+## 2. Two runtimes
 
-Both are TypeScript on Node 24 or newer, built with `tsc`, with **zero runtime dependencies
-outside the Node standard library**. They share no code and talk only over HTTP.
+Both runtimes use TypeScript on Node 24 or a later version. Both use `tsc`. Neither has a
+runtime dependency outside the Node standard library. They share no code. They communicate
+only with HTTP.
 
-That separation is a design commitment, not a packaging accident. The connector ships into
-someone else's application and must stay small enough that installing it is not a decision;
-merging the packages would make it impossible to see when it is growing. The same reasoning
-extends inward: the gateway's data path is kept thin enough to reimplement in Rust or Go
-without rewriting routing policy or provider adapters, which is what the
-[dependency rule](../../ARCHITECTURE.md#components-and-dependency-direction) and its two
-declared concessions exist to protect.
+This separation is a commitment. The connector installs into the application of another
+company. It must stay small. Then the installation is not a decision. One package for both
+runtimes hides the growth of the connector.
 
-## 3. The control loops
+The same logic applies inside the gateway. The data path stays thin. A later data path in
+Rust or Go must not need a new routing policy. The dependency rule and its two declared
+concessions protect this property. See
+[`../../ARCHITECTURE.md`](../../ARCHITECTURE.md#components-and-dependency-direction).
 
-The system is five loops with different authorities, latency bounds, and failure modes.
-Reading it as one request path is the most common way to misunderstand it.
+## 3. The five control loops
 
-### 3.1 Declaration-time feasibility — synchronous, at write time
+The system has five loops. Each loop has a different authority, a different time bound and a
+different failure. A reader must not read the system as one request path.
 
-| | |
+### 3.1 The feasibility check — synchronous, at the write
+
+| Item | Value |
 |---|---|
-| **Trigger** | A write to the target document |
-| **Input** | The proposed document; capability floors per `(model, host, region, service_tier)` with provenance and age; declared reservations |
-| **Authority** | Rejects the write outright |
-| **Latency** | Synchronous with the write; no traffic has flowed |
-| **Output** | Acceptance plus a committed decision receipt, or a rejection disclosing its own basis |
+| Trigger | A write of the *target document* |
+| Input | The new document, the *capability floors*, the declared reservations |
+| Authority | It rejects the write |
+| Time | Synchronous with the write. No traffic has flowed |
+| Output | An acceptance and a *decision receipt*, or a rejection with its basis |
 
-Three properties are customer-visible and easy to get wrong. Rejection is **biased against
-itself** — only when the most optimistic candidate floor fails by more than its own variance.
-When every tier for a candidate has expired the check **abstains and the write is accepted**,
-because the gateway does not reject a target on the strength of a number it no longer stands
-behind. And a **corrected floor never invalidates a live document**: the target stays in
-force, the status resource says it was accepted against a since-corrected floor, and only a
-customer write changes what the document says.
+Three properties are visible to the customer:
 
-The decision receipt is what makes a later correction a *comparison* rather than a
-reconstruction of a past decision from logs — the same objection the design raises against
-reconstructed binding reasons. It lives in a sibling table, never inside the document,
-because the document is the customer's statement of intent and fields they did not author
-must not appear in it.
+- The gateway rejects a target with caution. The target must fail the most optimistic
+  candidate floor by more than the variance of that floor.
+- The check must *abstain* when each tier for a candidate is stale. The gateway then accepts
+  the write. The gateway must not reject a target on a number that it no longer supports.
+- A correction of a floor must not invalidate a live document. The target stays in force. The
+  status resource shows that the floor changed. Only a write from the customer changes the
+  document.
 
-### 3.2 The ranked-list push loop — the routing product in normal operation
+The *decision receipt* makes a later correction a comparison. Without the receipt the gateway
+must build a past decision from logs again. The receipt is in a separate table. It is never in
+the *target document*, because that document holds only the customer's own statement.
 
-| | |
+### 3.2 The push of a ranked list — the routing product in normal operation
+
+| Item | Value |
 |---|---|
-| **Trigger** | A target or reservation write, a measurement change, a strain-driven shift (behavior 3) |
-| **Input** | The current state snapshot: per-workload rolling windows, the resolved target, live reservations |
-| **Authority** | Advisory in the strict sense — the connector obeys, but the gateway cannot force a per-request choice |
-| **Latency** | ~5 seconds from committed write to in-force routing |
-| **Output** | An ordered provider list with its binding reason, plus a connector acknowledgement |
+| Trigger | A write of a target or a reservation, a change in measurement, or a shift from *provider strain* |
+| Input | The state snapshot: the *windows*, the resolved *target*, the live reservations |
+| Authority | Advisory. The connector obeys. The gateway cannot decide one request |
+| Time | Approximately 5 seconds from the write to the new routing |
+| Output | A *ranked list* with its *binding reason*, and an acknowledgement |
 
-The list is derived by calling the routing seam repeatedly against the snapshot, not by a
-second comparator, so a second implementation of the routing decision cannot come into
-existence ([ADR 0006](../adr/0006-routing-authority-stays-gateway-side.md)). Pushes are
-debounced per workload.
+The gateway makes the list with repeated calls to the routing function. It does not use a
+second comparator. Therefore a second implementation of the routing decision cannot occur. See
+[ADR 0006](../adr/0006-routing-authority-stays-gateway-side.md). The gateway debounces the
+push for each workload.
 
-Two things a reader will otherwise get wrong. **Delivery mode is itself a signal:** a
-connector on the polling fallback rather than a pushed stream shows up as a persistently wide
-gap between declaration and acknowledgement, and that gap is a degradation the customer would
-otherwise never be told about. And **the acknowledged edge, not the declaration, is what
-bounds behavior**: traffic between the two went direct.
+Two facts are easy to miss:
 
-### 3.3 The measurement and `unmet` loop — the fragile one
+- **The delivery mode is a signal.** A connector on the poll fallback shows a large delay
+  between the declaration and the acknowledgement. This is a degradation. The customer has no
+  other indication of it.
+- **The *acknowledged edge* bounds the behavior.** The declaration does not. Traffic between
+  the two moments went direct.
 
-| | |
+### 3.3 The measurement loop and *unmet* — the weak loop
+
+| Item | Value |
 |---|---|
-| **Trigger** | Every usage report the connector sends |
-| **Input** | Connector-reported outcomes only. In normal operation there is no other input |
-| **Authority** | Sets customer-visible state on four surfaces |
-| **Latency** | Windows spanning trailing 5 minutes or 200 requests, whichever spans longer; two windows to enter `unmet`, two to leave |
-| **Output** | The status resource (authoritative), a signed notification on transitions, the connector-written response header |
+| Trigger | Each usage report from the connector |
+| Input | The reports from the connector. In normal operation no other input exists |
+| Authority | It sets a state that the customer sees on four surfaces |
+| Time | A *window* of 5 minutes or 200 requests. Two windows to enter *unmet*, two to leave |
+| Output | The status resource, a signed notification, and the header from the connector |
 
-This loop is where the architecture's central bet is cashed and where it has already broken
-once. Reports must be folded into the measurement windows **at ingestion**; a change that
-stops that happening leaves every provider `insufficient_data` forever, makes `unmet`
-unreachable, and fails no unit test. Three rules protect it, and all three are consequences
-of the same fact rather than separate hygiene:
+This loop failed one time and nobody saw the failure. The gateway must put each report into
+the *windows* at the time of input. A change that stops this leaves each provider at
+*insufficient data*. *Unmet* then becomes unreachable, and no unit test fails. Three rules
+protect the loop:
 
-- One shared status classifier serves the ingestion path and the in-path path, so the two
-  classifications cannot drift. It treats the connector's transport-failure encoding as
-  provider risk rather than success — the trap being that the encoded value is numerically
-  below the error threshold.
-- A record naming a provider with no catalogue entry is **dropped as unpriceable**, never
-  priced at zero, because a zero rate is indistinguishable from free capacity.
-- Only the service's own customer's records are folded in, because the windows carry no
-  customer dimension. Folding several customers in would silently average one customer's
-  providers into another's target.
+- One function classifies the status for both paths. Therefore the two classifications cannot
+  become different. The function treats a transport failure as provider risk. The trap is the
+  numeric value of that failure, which is below the error threshold.
+- The gateway discards a record for a provider with no entry in the catalogue. The gateway
+  must not price it at zero, because a zero price looks like free capacity.
+- The gateway puts in only the records of its own customer, because a window has no customer
+  key. Records from more customers make an average of one customer's providers in another
+  customer's target.
 
-Two lookbacks, not one, and they answer different questions: routing and the status resource
-read a *trailing* merge of the last three closed windows, while the `unmet` machine judges
-only *the window that just closed*. Merging older windows into the `unmet` verdict would keep
-judging a recovered workload on windows it had already recovered from, breaking the
-deliberate symmetry of two-window entry and two-window exit.
+**Two lookbacks exist, and they answer different questions.** Routing and the status resource
+read the last three closed windows together. The *unmet* machine judges only the window that
+closed last. Older windows in the *unmet* verdict judge a recovered workload again. That
+breaks the symmetry of the two-window entry and the two-window exit.
 
-**Exploration is a correctness requirement, not a heuristic.** A provider never chosen can
-never be measured, so the seam prefers an unmeasured provider over a measured one — without
-which the first provider measured keeps the traffic forever. The consequence for anyone
-reading a short run: until every candidate has been measured, the observed split is the
-exploration transient and says nothing about whether targets work.
+**Exploration is necessary and is not a heuristic.** The gateway cannot measure a provider
+that it never selects. Therefore the routing function prefers a provider with no measurement.
+Without this rule the first measured provider keeps the traffic. One result applies to a short
+run. Before the measurement of each candidate, the traffic split is the transient of the
+exploration. It shows nothing about a target.
 
 ### 3.4 The interception loop — behavior 2, not built
 
-| | |
+| Item | Value |
 |---|---|
-| **Trigger** | Corroborated evidence of provider strain: banded deviation from that provider's own trailing 24-hour baseline, never an absolute rate |
-| **Input** | The internal fine-grained strain aggregate |
-| **Authority** | Puts the gateway in the request path for the window's duration; fails individual in-flight requests over |
-| **Latency** | Entry fast, exit slow, deliberately asymmetric |
-| **Output** | An append-only window record with a binding reason; a mandatory per-request response header |
+| Trigger | Corroborated evidence of *provider strain*, as a *band* against the 24-hour baseline of that provider |
+| Input | The internal aggregate at a fine granularity |
+| Authority | It puts the gateway in the request path for the window. It moves one request to another provider |
+| Time | Entry is fast. Exit is slow. This is deliberate |
+| Output | A window record with a *binding reason*, and a header on each intercepted response |
 
-Interception exists for exactly one thing a directive cannot do: **fail an individual
-in-flight request over to another provider.** It follows that it is for *partial* failure. A
-fully unavailable provider needs a directive, not the data path — every request would fail
-over, so moving the whole workload is both sufficient and cheaper. A model deprecation is
-known in advance and is a scheduled directive; no window opens for one.
+An *interception window* exists for one function. A *directive* cannot move one request that
+is in flight to another provider. A window can. Therefore a window is for a partial failure.
+Two conditions need no window:
 
-The edge asymmetry is not the symmetric rule `unmet` uses, and the difference is principled:
-`unmet` protects a *report*, where flapping gets the alert muted, while a window is an
-*action* that is free, reversible, and whose costs point one way — opening late costs the
-customer failed requests, closing late costs only gateway compute. So a window opens on a
-single corroborated interval and closes only on sustained recovery, proved by **canary
-traffic through the gateway**. Synthetic probes on a gateway-held key measure the wrong
-account, since rate limits are scoped per organization; releasing traffic direct to test
-would make the customer pay for the experiment with unprotected requests. The consequence to
-accept: the tail of every window is mixed, so **interception is a per-request property, not
-a per-window one**, and no record may describe a window as an interval in which everything
-was intercepted.
+- A provider that is fully unavailable needs a *directive*. Each request fails over, so a
+  move of the whole workload is sufficient and cheaper.
+- The withdrawal of a model is known in advance. It is a scheduled *directive*.
 
-Windows open automatically. An operator may force-clear or suppress one and may **never open
-one**; every override is recorded with its actor. A human in the opening path would spend the
-entire insertion-latency budget, and the incentive that would make automatic opening
-untrustworthy has already been removed — no charge depends on a declaration
-([ADR 0004](../adr/0004-incidents-included-not-surcharged.md)).
+The asymmetry of the edges is not the symmetric rule of *unmet*. The difference has a reason.
+*Unmet* protects a report, and a report that flaps gets muted. A window is an action. It is
+free and reversible. A late start costs the customer failed requests. A late end costs only
+gateway compute. Therefore a window opens on one corroborated interval. It closes only after a
+continuous recovery.
 
-A window whose record cannot be written is **still opened** — customer availability outranks
-our own bookkeeping — and the gap is disclosed as an unrecorded window, because a period we
-cannot account for and a period in which nothing happened must not look alike.
+Canary traffic through the gateway proves the recovery. A synthetic probe on a gateway
+credential measures the wrong account, because a rate limit applies to one organization. Direct
+traffic for a test makes the customer pay for the experiment with unprotected requests. One
+result follows. The end of each window is mixed. Therefore an interception is a property of
+one request. It is not a property of the whole window. No record can say that the gateway
+intercepted all traffic in a window.
+
+A window opens automatically. An operator can clear a window or suppress a window. An operator
+must never open one. The gateway records each override with its actor. A human in the path of
+the decision uses the whole time budget. [ADR 0004](../adr/0004-incidents-included-not-surcharged.md)
+already removed the incentive that makes an automatic start suspect. No charge depends on a
+declaration.
+
+The gateway opens a window even when it cannot write the record. The availability of the
+customer is more important than our records. The gateway then discloses the gap. A period
+without a record and a period without an event must not look the same.
 
 ### 3.5 The reservation loop — behavior 4, built
 
-| | |
+| Item | Value |
 |---|---|
-| **Trigger** | A declared reservation plus connector telemetry |
-| **Input** | The reservation document; observed traffic; the reservation's effective rate |
-| **Authority** | A *preference* inside the routing seam — never an override |
-| **Latency** | Same window as measurement |
-| **Output** | An unaddressed-reservation report naming its call-site cause; routing preference onto eligible capacity |
+| Trigger | A declared *reservation* and the reports from the connector |
+| Input | The reservation document, the observed traffic, the effective rate |
+| Authority | A preference in the routing function. Never an override |
+| Time | The same *window* as the measurement |
+| Output | A report of an unaddressed reservation with its cause, and a preference in routing |
 
-The preference never beats a hard dimension, never leaves `allowed_models`, and is inert when
-no reservation is declared. Whether a term is *live* is a clock question, so it is resolved
-by the caller into the state snapshot rather than read inside the seam — which is what let
-this behavior land without changing the seam's signature or its purity.
+The preference never defeats a *hard dimension*. It never leaves *allowed models*. It is
+inert without a declared reservation. The term of a reservation is a clock question. Therefore
+the caller resolves it into the state snapshot. The routing function keeps its signature and
+its purity.
 
-Utilization is computed from the connector's own telemetry, not from the provider, because
-the authoritative provider signals do not serve routing: one cloud publishes a utilization
-figure that lags 30 seconds to 15 minutes against a 5-minute window, and another publishes
-none at all. A read-only cloud credential may be offered as optional corroboration; requiring
-it would be a far heavier install than the connector itself.
+The gateway computes the use of a reservation from the reports of the connector. It does not
+use the provider, because the provider signals do not serve routing. One cloud publishes a
+figure with a delay of 30 seconds to 15 minutes against a 5-minute window. Another cloud
+publishes no figure. A read-only cloud credential is optional. A necessary credential is a
+much larger installation than the connector.
 
-The reservation lives in **its own resource, not the target document**. A target states an
-outcome the customer wants; a reservation states a fact about their contract with a third
-party. Holding both in one versioned document would let a term expiring change what a target
-means without the customer writing anything.
+A *reservation* is in its own resource. It is not in the *target document*. A target states an
+outcome that the customer needs. A reservation states a fact about a contract with a third
+party. One document for both permits the end of a term to change a target. The customer then
+writes nothing.
 
-## 4. System invariants
+## 4. The invariants of the system
 
-Each of these spans components, so no single module can be read to check it. The first five
-are protected in the built system; the last two are commitments the deferred behaviors must
-honor.
+Each invariant crosses components. One file cannot show it. The gateway protects invariants 1
+to 5 today. Invariants 6 and 7 are commitments for the unbuilt behaviors.
 
-1. **Fail-open outranks every other property.** If the control plane is unavailable, unreadable,
-   or corrupt, customer traffic still reaches a provider. This applies to our own startup:
-   a corrupt store yields passthrough forwarding with a failing management surface, never a
-   refusal to boot. It also applies to our own control plane: the management and connector
-   edges are siblings of the data path, not part of it, so a control-plane failure cannot
-   share a fate with forwarding.
-2. **An empty document and an unreadable store must never look alike.** The gateway never
-   synthesizes an empty target document, because a corruption would then present as
-   deliberate configuration and the customer would never learn their targets had stopped
-   applying.
-3. **One implementation of the routing decision.** The pushed ranked list and any in-path
-   per-request choice come from the same pure function over a state snapshot. The connector
-   holds no policy.
-4. **Usage ingestion feeds the measurement windows.** See 3.3. This is the invariant most
-   likely to be broken silently by a well-meaning change, and the one for which unit tests
-   are not sufficient evidence.
-5. **The dependency rule holds with exactly two declared concessions.** Nothing in the pure
-   layers imports the HTTP surfaces or framework types; the store's SQLite I/O and the
-   connector edge's HTTP are confined to one file each, so a data-plane rewrite replaces a
-   file rather than a package. Both concessions are textually checkable, which is what lets a
-   reviewer tell a concession from drift.
-6. **No customer-facing surface reads the internal strain aggregate.** Enforced structurally
-   — the wire must not exist, and its existence fails the build rather than a review. Sampling
-   outputs for leaks tests the wrong property
-   ([ADR 0005](../adr/0005-strain-evidence-detection-internal.md)).
-7. **A decision that cannot state its binding reason must not be made.** A routing choice, a
-   feasibility rejection, and an interception window each owe the customer the dimension at
-   fault, the value, and the reason — produced by the decision itself, never reconstructed
-   afterwards.
+1. ***Fail-open* is more important than each other property.** Customer traffic reaches a
+   provider when the control plane is unavailable, unreadable or corrupt. This applies to our
+   own start. A corrupt *target store* gives pass-through traffic and a failed management
+   surface. The gateway must not refuse to start. This also applies to our own surfaces. The
+   management surface and the connector surface are siblings of the data path. A failure in
+   them must not stop the traffic.
+2. **An empty document and an unreadable store must not look the same.** The gateway never
+   makes an empty *target document*. A corruption then looks like a deliberate configuration.
+   The customer never learns that the targets stopped.
+3. **One implementation of the routing decision exists.** The *ranked list* and each request
+   in a window use the same pure function on a state snapshot. The connector holds no policy.
+4. **The usage input feeds the *windows*.** See section 3.3. A change breaks this invariant
+   easily and silently. Unit tests are not sufficient evidence for it.
+5. **The dependency rule holds with two declared concessions.** The pure modules do not import
+   an HTTP surface. The SQLite calls and the connector surface are each in one file. Therefore
+   a new data path replaces one file. Both concessions are checkable in text. A reviewer can
+   then see a concession and a drift as different things.
+6. **No customer surface reads the internal aggregate.** The control is structural. The
+   connection must not exist, and such a connection fails the build. A test of the outputs
+   examines the wrong property. See
+   [ADR 0005](../adr/0005-strain-evidence-detection-internal.md).
+7. **A decision must give its *binding reason*.** A routing choice, a rejection and an
+   *interception window* each owe the customer the dimension, the value and the reason. The
+   decision makes the reason. Nothing builds the reason later.
 
-## 5. Interface surfaces
+## 5. The interfaces
 
-Endpoints, grouped by which edge serves them. The edges are separate processes' worth of
-concern even when co-hosted: management and connector traffic must be able to fail without
-touching forwarding.
+The surfaces are separate concerns. Management traffic and connector traffic must fail without
+an effect on the traffic to a provider.
 
-| Surface | Edge | Notes |
+| Interface | Surface | Notes |
 |---|---|---|
-| Target document read/write | Management | Versioned; a write must supply the version it replaces, and a mismatch is terminal — the gateway never retries for the client |
-| Per-workload status | Management | **The authoritative record** of current state. Carries `unmet`, `insufficient_data`, non-contribution, since-corrected-floor flags, and binding reasons |
-| Reservation document read/write | Connector edge | Customer-authored; separate from the target document by design |
-| Ranked-list stream | Connector edge | Server-Sent Events with a polling fallback; acknowledgement recorded per directive |
-| Usage reports | Connector edge | Batched. Folded into the measurement windows at ingestion — see invariant 4 |
-| Connector minting | Admin | Behind an admin token; answers `404` rather than standing unguarded when the token is absent |
-| Retained data path | Data path | Forwards to a provider chosen by the routing seam, falling back to the configured upstream when routing throws. Kept for behavior 2, not because it serves traffic |
+| Read and write the *target document* | Management | Versioned. A write gives the version that it replaces. A mismatch is final, and the gateway makes no retry for the caller |
+| The status of one *workload* | Management | **The authority** for the current state. It gives *unmet*, *insufficient data*, a corrected floor and each *binding reason* |
+| Read and write the reservation document | Connector | The customer writes it. It is separate from the *target document* |
+| The stream of a *ranked list* | Connector | Server-Sent Events with a poll fallback. The gateway records each acknowledgement |
+| The usage reports | Connector | In batches. The gateway puts them into the *windows* at input. See invariant 4 |
+| Make a connector token | Admin | Behind an admin token. Without that token the endpoint gives status 404 and not an open endpoint |
+| The retained data path | Data path | It sends a request to a provider from the routing function. It uses the configured provider when the routing logic fails. It exists for behavior 2 |
 
-Three contracts carry more weight than the endpoint list.
+Three contracts are more important than the list.
 
-**The provider adapter is a pure translation pair** — it describes an upstream call and never
-performs it, so the same contract can be re-expressed as a Rust trait or Go interface. Its
-per-request cost function exists from the first milestone because both target-state routing
-and reservation-aware routing consume it, and retrofitting it would touch every adapter.
-Streaming splits along this seam: the connector relays streams from its first day, while the
-adapter's chunk transform is needed only when the gateway is mid-stream, which happens inside
-an interception window and not before. Contract details in
+**A provider adapter is a pure pair of translations.** An adapter describes a call. An adapter
+never makes the call. Therefore a Rust trait or a Go interface can hold the same contract. The
+adapter gives a cost for each request from the first milestone, because two behaviors need
+that cost. A later change touches each adapter. The stream splits at this contract. The
+connector passes a stream through from its first day. The adapter needs a transform for each
+chunk only when the gateway is in the stream. That occurs in an *interception window*. See
 [`gateway-design.md`](gateway-design.md#provider-adapter-contract-proposed).
 
-**The routing seam returns a decision, not a provider.** It carries the chosen provider, the
-dimension that bound the choice, and per-candidate rejection reasons — or, when a hard
-dimension cannot be held, an explicit failure that is a routing *outcome* rather than an
-error. Infeasibility is a return value, never an exception, which is what keeps the fail-open
-wrapper's semantics clean: an exception from the seam means a genuine defect.
+**The routing function returns a decision and not a provider.** The decision gives the chosen
+provider, the *dimension* that bound the choice, and a reason for each rejected candidate. For
+a *hard dimension* the decision gives an explicit failure. That failure is a routing result
+and not an error. Infeasibility is a return value and never an exception. Therefore an
+exception from the function shows a real defect, and the *fail-open* logic stays clean.
 
-**The directive protocol is declare-then-acknowledge.** Both edges are recorded, and the
-acknowledged one is what bounds behavior.
+**A *directive* has two edges.** The gateway declares, and the connector acknowledges. The
+gateway records both. The *acknowledged edge* bounds the behavior.
 
 ## 6. State and durability
 
-Behavior 1 produces four kinds of state, and they get four different answers rather than one
-store-everything default. The full table with its reasoning is in
-[`gateway-design.md`](gateway-design.md#durability-and-the-target-store-proposed); the shape
-matters at system level:
+Behavior 1 makes four kinds of state. Each kind gets a different answer. The full table is in
+[`gateway-design.md`](gateway-design.md#durability-and-the-target-store-proposed).
 
-- The **target document** is committed before acknowledgement, because a version the customer
-  has seen but the store has not committed makes "single source of truth" untrue. Writes are
-  rare, human-driven, and off the data path, so the latency is affordable.
-- **Measurement windows** are not durable. Raw samples are derived and cheap to rebuild, and
-  persisting a hot rolling window would put the store on the request path. Per-window
-  summaries are persisted best-effort, and exist only so several processes can be merged.
-- **`unmet` state and its counters** persist best-effort at window close, tolerating loss of
-  the last window: nothing acknowledges them, so committed-before-ack buys nothing, and
-  losing one window delays an entry by roughly five minutes without ever producing a wrong
-  state.
-- **Decision receipts** commit in the same transaction as the document, because a committed
-  document without its receipt is a decision we cannot audit.
+- The gateway commits the ***target document*** before the acknowledgement. A version that
+  the customer saw and the store did not commit makes one source of truth false. A write is
+  rare and is off the data path. Therefore the delay is acceptable.
+- A ***window*** is not durable. The samples are cheap to build again. A durable rolling
+  window puts the *target store* on the request path. A summary of each window is durable at
+  the close, as a best effort. A summary exists only for a merge between processes.
+- The ***unmet*** state and its counters are durable at the close of a window, as a best
+  effort. Nothing acknowledges them. A loss of one window delays an entry by approximately 5
+  minutes. It never makes a wrong state.
+- A ***decision receipt*** commits in the same transaction as the document. A document without
+  its receipt is a decision that we cannot audit.
 
-**Restart.** The state machine survives; the samples do not. So a workload can be `unmet`
-*and* `insufficient_data` at once — coherent, because the first is a claim about the past and
-the second about the present, and the status resource must be able to represent both.
-Counters older than about two windows of downtime are discarded while the flag itself is
-kept: a half-finished count from three days ago measures nothing, whereas silently clearing
-the flag while nobody was watching is the harm this design exists to remove.
+**A restart.** The state machine continues. The samples do not continue. Therefore a workload
+can be *unmet* and at *insufficient data* at the same time. The first is a statement about the
+past. The second is a statement about the present. The status resource must show both. The
+gateway discards a counter after approximately two windows of downtime. The gateway keeps the
+*unmet* flag. An old counter measures nothing. A silent removal of the flag is the damage that
+this design prevents.
 
-**Several processes.** Each keeps its own window in memory and writes a tagged summary at
-close; the `unmet` machine evaluates over merged summaries whose close falls in the current
-window, pruning as it goes. A crashed or scaled-down process ages out within one window with
-no heartbeat, liveness detection, or leader election. Two consequences a reader will
-otherwise misread as regressions: the sample floor is workload-wide across merged summaries
-rather than per-process, and while a process is down the merged count can legitimately fall
-below that floor and report `insufficient_data`.
+**More than one process.** Each process keeps its own *window* and writes a summary at the
+close. The *unmet* machine reads the merged summaries of the current window. It discards older
+rows. A process that stops ages out in one window. The gateway needs no heartbeat and no
+leader election. Two results look like a defect and are correct. The sample floor applies to
+the whole workload and not to one process. During the downtime of a process the merged count
+can fall below that floor and give *insufficient data*.
 
-**Notifications de-duplicate through the same primitive as the document.** The `unmet`
-transition is itself a compare-and-set; the process that wins it sends, the others observe the
-version move and stay silent, so N processes produce one notification. Retries are bounded and
-do not survive a restart, because the status resource is authoritative and a persisted retry
-queue would reintroduce the unbounded-queue-during-an-incident failure this design rejected. A
-transition first *discovered* after a restart notifies normally — it is a real transition, and
-suppressing it would let a deploy swallow an `unmet` entry.
+**Notifications use the same primitive as the document.** The transition to *unmet* is a
+compare-and-set. The process that wins sends the notification. The other processes see the new
+version and stay silent. Therefore N processes make one notification. A retry is bounded and
+does not continue after a restart, because the status resource is the authority. A durable
+retry queue makes an unbounded queue during a bad period. A transition that the gateway finds
+first after a restart makes a normal notification. It is a real transition. Suppression permits
+a deploy to hide it.
 
-## 7. Scaling, and the gap that is not filled
+## 7. Capacity, and one gap
 
-Load in this architecture is driven by **connector count, not request volume** — which is the
-whole point, and also the thing this repository has never sized. The gateway holds an SSE
-socket per connector, ingests batched usage reports, keeps in-memory windows per (workload,
-provider), and does no per-request work at all in normal operation.
+The connector count drives the load. The request volume does not. This is the purpose of the
+architecture. Nobody has measured the result.
 
-[`../../ARCHITECTURE.md`](../../ARCHITECTURE.md) flags the absence explicitly and this
-document repeats it rather than softening it: **there is no expected-connector-count
-projection, no per-connection memory or CPU budget for the held-open sockets, and no hosting
-cost estimate.** Two decisions wait on it — a deployment target, and any pricing rate
-grounded in our own cost rather than in competitor comparison.
+The gateway holds one socket for each connector. It receives usage reports in batches. It
+keeps a *window* for each workload and provider. It does no work for each request in normal
+operation.
 
-What can be said without measurement: the store is never read synchronously while serving a
-request, so store latency does not enter the request path; the data path reads an in-memory
-document copy refreshed by polling, which is why a target change takes about five seconds;
-and the push scheduler debounces per workload, so a burst of writes does not become a burst
-of pushes.
+[`../../ARCHITECTURE.md`](../../ARCHITECTURE.md) states the gap, and this document repeats it.
+**No projection of the connector count exists. No memory or CPU budget for one socket exists.
+No cost estimate exists.** Two decisions wait for these numbers: a deployment target, and each
+rate from our own cost.
 
-## 8. Where the deferred behaviors attach
+Three facts need no measurement. The gateway never reads the *target store* during a request,
+so the store latency is not in the request path. The data path reads a copy of the document in
+memory and polls for a new version. This is the reason for the 5-second bound. The scheduler
+debounces the push for each workload, so many writes do not make many pushes.
 
-Each has a named prerequisite rather than a date, which is why they are deferrals rather
-than a backlog.
+## 8. The attachment point of each unbuilt behavior
 
-**Behavior 3 — collective strain signals.** Gated on approximately ten *concurrently
-connected* customers per `(provider, model, region)` cell. The obstacle is commercial, not
-technical: a cohort-derived routing change requires corroboration across two signal types or
-two disjoint cohorts, and neither is reachable from a handful of contributors — the aggregate
-is noise with no population in it to separate a provider's degradation from one customer's
-bad afternoon. Note the trigger is *not* the aggregation contract's cohort minimum of twenty,
-which binds disclosure and not detection.
+Each behavior has a named condition and not a date.
 
-**Contribution does not wait for the trigger.** Connectors report strain contributions from
-the day the connector exists, because a cohort cannot be built retroactively and the trigger
-counts customers concurrently connected — a behavior that begins collecting on the day it is
-built can never find its trigger already met. What is deferred is the aggregate and
-everything downstream: cohort membership, banding, disclosure, and routing on the result.
+**Behavior 3 — collective signals.** It waits for approximately 10 customers for each *cell*.
+The obstacle is commercial and not technical. A routing change from *cohort* evidence needs
+corroboration from two signal types or two separate cohorts. A small number of contributors
+gives neither. The aggregate is then noise. It cannot separate the degradation of a provider
+from one bad afternoon of one customer. This condition is not the disclosure minimum of 20
+contributors. That minimum bounds a disclosure and not the detection.
 
-Attachment points: a new cross-customer aggregate behind the structural guard of invariant 6;
-a disclosure layer that collapses cell keys to `(provider, model-family)` and enforces
-one-disclosure-per-cell-per-bucket; and a corroboration gate on ranked-list changes. Note that
-corroboration binds a *shift* as strictly as a window, and for the opposite reason from the
-window's fast entry: a shift moves all of a workload's traffic with no per-request failover
-softening it, so the blunter action does not get the weaker evidence rule.
+**A *strain contribution* does not wait.** A connector sends contributions from its first day.
+A cohort cannot be built for a past period. The condition counts the customers that are
+connected at the same time. A behavior that starts to collect on its first day can never find
+its condition already true. The gateway defers the aggregate and each function after it:
+membership of a cohort, the *band*, the disclosure and the routing.
 
-**Behavior 2 — strain-triggered interception.** Needs the connector (built), the gateway
-holding a provider credential (the single reason interception exists — the connector cannot
-fail a request over without every provider's credentials, and that is the install burden this
-product refuses), and behavior 3 for `anticipatory` windows. Until the cohort trigger is met,
-**every window is `observed`** — which must be stated rather than discovered, because a
-behavior 2 built as though cohort evidence were available on day one would ship exactly the
-reactive posture the product claims to replace.
+The attachment points are: a cross-customer aggregate behind the structural control of
+invariant 6; a disclosure layer that reduces each key to `(provider, model-family)`; and a
+corroboration control on each change of a *ranked list*. The corroboration rule binds a change
+of a ranked list as strictly as a window, for the opposite reason. A change moves all traffic
+of a workload. No failover for each request makes it softer. The blunter action does not get
+the weaker rule.
 
-**Behavior 5 — prompt translation.** Follows behavior 2, because the moment it exists for is
-a cross-model failover mid-window. Behavior 1 does not need it: a customer's `allowed_models`
-list is their assertion that those models are interchangeable *for that workload*, so the
-gateway does not adapt a prompt when moving a request between two models the customer listed.
-A customer who does not want a model's output removes it from the list rather than receiving
-a translated approximation. Its one hard requirement: it must be able to report that no
-faithful translation exists and fall back to the untranslated prompt, never silently alter
-intent.
+**Behavior 2 — an *interception window*.** It needs the connector, which exists. It needs the
+gateway to hold a provider credential. This is the one reason for the behavior: the connector
+cannot move a request without each provider credential, and that installation is the burden
+that this product refuses. An `anticipatory` *evidence class* needs behavior 3. Before the
+condition of behavior 3, each window has the `observed` evidence class. This document states
+that fact. A behavior 2 with an assumption of cohort evidence gives the reactive product that
+we replace.
 
-**In-path mode.** If accepted, it attaches as *a connector the gateway operates* — the same
-ranked list from the same control plane, the same usage-ingestion path, and no change to the
-target document, the feasibility check, the measurement windows, or the `unmet` machine, none
-of which are aware of which mode a workload runs in. What changes is who hosts the connector
-and who holds the credential. Hard budget is then not a third mechanism but a property in-path
-mode makes available, since a gateway already in the path can refuse a call before it is made.
-The out-of-path guarantee narrows from a product property to a per-workload one, and ships
-behind a named exception so it can be withdrawn
-([ADR 0009](../adr/0009-in-path-mode-is-a-gateway-operated-connector.md)).
+**Behavior 5 — prompt translation.** It follows behavior 2, because it is for a failover to a
+different model in a window. Behavior 1 does not need it. The list of *allowed models* is the
+customer's statement that those models are interchangeable for that *workload*. Therefore the
+gateway does not adapt a prompt between two models in that list. A customer removes a model
+from the list. The behavior has one hard requirement. It must report that no correct
+translation exists and then use the original prompt. It must never change the intent silently.
 
-**Async budget enforcement.** Follows the push-and-reconcile shape of routing: a pushed
-snapshot, connector self-enforcement, asynchronous reconciliation over the existing report
-channel. Overspend is bounded rather than eliminated —
-`report_interval × max_burn_rate`, the same shape of cost as the five-second propagation
-bound already accepted for routing
-([ADR 0008](../adr/0008-budget-enforcement-is-async-connector-side-by-default.md)).
+**A connector that the gateway operates.** It attaches as the same connector logic in the
+gateway process. It uses the same *ranked list*, the same control plane and the same usage
+input. The *target document*, the feasibility check, the *windows* and the *unmet* machine do
+not change. They do not know the mode of a workload. The host of the connector changes. The
+holder of the credential changes. A synchronous budget control is then a property of this mode,
+because a gateway in the path can refuse a call. The out-of-path property applies to each
+workload and not to the product. This mode ships as a named exception, so we can remove it. See
+[ADR 0009](../adr/0009-in-path-mode-is-a-gateway-operated-connector.md).
 
-## 9. Alternatives rejected at system level
+**Asynchronous budget control.** It uses the shape of the routing loop: a pushed snapshot,
+local control in the connector, and reconciliation with the usage reports. It bounds the
+overspend. It does not remove it. The bound is `report_interval` multiplied by
+`max_burn_rate`. This is the shape of the 5-second bound of the routing loop. See
+[ADR 0008](../adr/0008-budget-enforcement-is-async-connector-side-by-default.md).
 
-[`gateway-design.md`](gateway-design.md#alternatives-considered) records the module-level
-rejections. These are the system-level ones, each with the reason it lost.
+## 9. The rejected alternatives
 
-- **In-path by default.** Rejected because it makes the gateway a worse single point of
-  failure than the providers it manages, adds latency the product was never meant to carry,
-  and reintroduces the always-on middleman the non-goals exclude. Kept as a scoped,
-  withdrawable exception instead.
-- **Connector-side routing policy.** Rejected: two implementations of the routing decision
-  would drift, and the second could not produce the authoritative binding reason the spec
-  requires.
-- **A separate in-path product with its own routing implementation.** Rejected on the same
-  ground — one policy core, two hosts.
-- **Provider credential custody by default.** Rejected as the easiest onboarding and the worst
-  trade available. A vault of customers' provider credentials is a target whose value is
-  unrelated to our size; it converts a breach of a control plane that today cannot stop a
-  single customer request into a breach that can spend every customer's provider budget; and
-  it inverts the product's own retention argument, since a customer whose keys we hold is not
-  safe to leave.
-- **Per-connector billing.** Rejected: it bills a customer for their own deployment topology,
-  punishes horizontal scaling, and makes our revenue a function of their autoscaler. The unit
-  is the managed workload ([ADR 0011](../adr/0011-billing-unit-is-the-managed-workload.md)).
-- **Per-incident or incident-conditional pricing.** Rejected because the gateway declares the
-  window and must not be paid by its own declarations
-  ([ADR 0004](../adr/0004-incidents-included-not-surcharged.md)).
-- **A third infeasibility state for "our floor was wrong".** Rejected: the two-state vocabulary
-  is load-bearing across the status schema, the notification trigger, and the routing seam's
-  return type, and a third state would pay that cost again to describe a defect in *our* data
-  rather than a property of the customer's workload. It gets a receipt, a status flag, and one
-  narrowly targeted notification instead.
-- **A customer-derived provider-health feed as a product.** Rejected in that form: it would
-  put the network effect's output and the product's largest disclosure surface in one pipe,
-  and hand a competitor the value of a customer base they do not have. If a feed is ever
-  taken, it is served from gateway-run synthetic probes and carries no contribution from
-  anyone — and therefore no anonymization contract at all.
-- **Retroactively invalidating live target documents when a floor is corrected.** Rejected: a
-  background job that breaks a live configuration because *our* data changed is worse than the
-  stale floor it fixes, and only a customer write may change the validity of their single
-  source of truth.
+[`gateway-design.md`](gateway-design.md#alternatives-considered) gives the module-level
+alternatives. This section gives the alternatives for the system.
 
-## 10. What would falsify this design
+- **The gateway in the request path for all traffic.** Rejected. It makes the gateway a worse
+  single point of failure than the providers. It adds latency. It makes this product the
+  always-on service that the non-goals prohibit. A connector that the gateway operates is the
+  scoped exception.
+- **Routing policy in the connector.** Rejected. Two implementations become different, and the
+  second cannot make the authoritative *binding reason*.
+- **A separate product with its own routing implementation.** Rejected for the same reason.
+  One policy core, two hosts.
+- **Custody of each provider credential.** Rejected. It is the easiest installation and the
+  worst trade. A store of customer credentials is a target. Its value does not depend on our
+  size. It changes a failure of our control plane into a failure that can spend the budget of
+  each customer. It also inverts our own retention argument, because a customer cannot leave
+  us easily.
+- **A price for each connector.** Rejected. It bills a customer for their own deployment. It
+  penalizes a horizontal scale. It makes our revenue a function of their autoscaler. The unit
+  is the managed *workload*. See
+  [ADR 0011](../adr/0011-billing-unit-is-the-managed-workload.md).
+- **A charge for each *interception window*.** Rejected. The gateway declares the window and
+  must not be paid by its own declarations. See
+  [ADR 0004](../adr/0004-incidents-included-not-surcharged.md).
+- **A third state for infeasibility.** Rejected. The two-state vocabulary carries the status
+  schema, the notification trigger and the return type of the routing function. A third state
+  pays that cost again for a defect in our own data. A *decision receipt*, a flag and one
+  notification are sufficient.
+- **A published health product from customer contributions.** Rejected in that form. It puts
+  the output of the network effect and the largest disclosure surface in one place. It gives a
+  competitor the value of a customer base that they do not have. A published product must use
+  synthetic probes. It then reads nothing from this aggregate.
+- **Automatic invalidation of a live *target document* after a correction of a floor.**
+  Rejected. A job that breaks a live configuration for a change in our own data is worse than
+  the stale floor. Only a write from the customer changes the document.
 
-Stated so the design is answerable rather than merely coherent.
+## 10. What can prove this design wrong
 
-- **Soft budget is unacceptable to most of the market.** Then the out-of-path bet is wrong at
-  the product level, not the mechanism level, and in-path mode becomes the default rather than
-  an exception. This is the cheapest thing on the list to test and the most expensive to be
-  wrong about (#21).
-- **Five-second target propagation is too slow for a real workload.** The bound is a direct
-  consequence of polling an in-memory copy rather than reading the store per request; it can
-  be tightened, but not to zero without putting the store on the request path.
-- **Capability floors cannot be sourced accurately enough to reject a target.** Then
-  declaration-time feasibility degrades to permanent abstention and `infeasible_by_declaration`
-  becomes decorative, leaving `unmet` as the only real report. The abstention rate is the
-  signal to watch, and it is deliberately visible for that reason.
-- **Cohort formation never reaches ten customers per cell.** Then behavior 3 never starts,
-  behavior 2 ships `observed`-only, and the proactive claim reduces to fast reaction.
-- **Per-connector infrastructure cost turns out not to be cheap.** Then the pricing story
-  built on "you do not pay for our presence in your path" survives, but the margin under it
-  may not. Section 7 is the gap.
+This section makes the design answerable.
+
+- **The market refuses an asynchronous budget control.** The central choice is then wrong at
+  the product level. A connector that the gateway operates becomes the default. This is the
+  cheapest item to test and the most expensive item to get wrong. It is issue #21.
+- **The 5-second bound is too slow for a real workload.** The bound is a result of the poll of
+  a copy in memory. We can make it smaller. We cannot make it zero without the *target store*
+  on the request path.
+- **A *capability floor* cannot be accurate.** The feasibility check then must *abstain*
+  always. *Infeasible by declaration* becomes decorative, and *unmet* is the only report. The
+  rate of abstention is the signal, and it is visible for this reason.
+- **A *cohort* never reaches 10 customers for a *cell*.** Behavior 3 then never starts.
+  Behavior 2 gives only the `observed` evidence class. The product then gives a fast reaction
+  and not a prevention.
+- **The cost for each connector is not low.** The promise about the request path stays true.
+  The margin can fail. Section 7 is the gap.

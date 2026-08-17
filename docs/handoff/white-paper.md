@@ -1,335 +1,301 @@
 # Provider risk management as a product
 
-A white paper for technical evaluators
+A white paper for technical readers.
 
 - Owner: henry.tran@uniblock.dev
 - Written: 2026-08-17
-- Governing specification: [`../product-specs/provider-risk-management-gateway.md`](../product-specs/provider-risk-management-gateway.md)
-- Companion: [`../design-docs/technical-blueprint.md`](../design-docs/technical-blueprint.md) — the
-  system design this paper argues for
-- Status of the thing described: two of five behaviors are implemented and proven by
-  commands; nothing is deployed; every check but one opt-in command runs against simulated
-  providers. See [Evidence, and what it does not establish](#evidence-and-what-it-does-not-establish).
+- Specification: [`../product-specs/provider-risk-management-gateway.md`](../product-specs/provider-risk-management-gateway.md)
+- Companion: [`../design-docs/technical-blueprint.md`](../design-docs/technical-blueprint.md)
+- Language: ASD-STE100 Simplified Technical English. The terms in *italics* are defined in
+  [`../../CONTEXT.md`](../../CONTEXT.md).
 
-Every number and mechanism in this paper has exactly one authoritative home elsewhere in
-this repository, and is linked rather than restated as fact here. Where this paper and a
-linked document disagree, the linked document is correct and this paper is a bug.
-
-## Abstract
-
-Teams that build on hosted AI model providers treat those providers as reliable, known
-counterparties. They are not: providers rate-limit, degrade, deprecate models, and go down
-without warning. Every AI gateway on the market responds to this by selling the customer
-better tools for reacting — routing rules, fallback chains, a unified schema, dashboards —
-and charges an always-on toll for sitting in the request path while the customer does the
-reacting.
-
-This paper argues that the product is the risk, not the plumbing, and that a specific
-architectural choice is what makes that product coherent: **in normal operation the gateway
-is not in the request path at all.** The customer's application calls the provider directly
-through a connector installed at its own call site. The gateway is a control plane that
-holds the customer's declared outcome, measures how each provider is doing from usage the
-connector reports back, and pushes ordered lists of providers over Server-Sent Events. It
-never carries the traffic.
-
-That choice buys two properties no in-path gateway can offer, and forecloses several things
-an in-path gateway gets for free. This paper states both, then states what has actually
-been built and what the evidence for it does not prove.
+This paper is not the authority for any fact. Each fact has one home in this repository.
+This paper gives a link to that home. If this paper and the linked document disagree, the
+linked document is correct. This paper is then a defect.
 
 ## 1. The problem
 
-The user is an engineering team running production traffic against one or more AI
-providers. Their exposure has four distinct shapes, and they discover each one the same
-way — after it costs them something:
+A customer runs production traffic against hosted AI model *providers*. The customer treats
+each provider as a reliable counterparty. This is not correct. A provider can do four things
+without a warning:
 
-- **Rate limiting.** A quota is exhausted, or the provider's own capacity is under
-  pressure, and requests start returning 429.
-- **Degradation.** The provider stays up and gets slower. Nothing fails; the p95 doubles.
-- **Deprecation.** A model the customer's prompts were written against is withdrawn on the
-  provider's schedule, not theirs.
-- **Waste.** Capacity the customer has already paid for — Bedrock Provisioned Throughput,
-  Azure OpenAI PTU — sits idle because a call site passes a foundation-model ID instead of
-  the provisioned ARN. The invoice arrives either way.
+- The provider can rate-limit the customer. Requests then return status 429.
+- The provider can degrade. The provider stays available and becomes slow. No request fails.
+- The provider can withdraw a model. The customer's prompts are written for that model.
+- The provider can bill the customer for idle capacity. The customer holds a *reservation*.
+  The customer's traffic does not address it.
 
-The industry's answer to all four is configuration. The customer writes a fallback chain, a
-weighted load-balancer config, a retry policy. That answer has a defect that is easy to
-overlook because it is structural rather than technical: **a routing rule encodes what the
-customer believed about their providers on the day they wrote it.** Provider behavior moves;
-the rule does not. The customer is on the hook for noticing the drift and rewriting.
+Every AI gateway on the market answers these four problems in the same way. Each gateway
+gives the customer a routing rule. The customer then writes the rule.
 
-## 2. Why incumbents do not sell this
+This answer has one defect. A routing rule holds what the customer believed on one day.
+Provider behavior changes. The rule does not change. The customer must see the change and
+write a new rule.
 
-Nine gateways were surveyed against published documentation on 2026-08-15 — OpenRouter,
-LiteLLM, Portkey, Helicone, Martian, Requesty, Unify, Kong AI Gateway, Cloudflare AI
-Gateway — with per-vendor citations in
+## 2. The market
+
+We surveyed nine gateways against their published documentation on 2026-08-15. The
+per-vendor facts and their sources are in
 [the competitive landscape reference](../references/2026-08-15-ai-gateway-competitive-landscape.md).
-Three findings matter for positioning.
+Three results are important.
 
-**Failover and latency- or cost-aware routing are table stakes.** Both ship nearly
-everywhere. Neither is a product; each is a feature the customer configures.
+**Failover is a standard feature.** Routing by latency or cost is also a standard feature.
+Almost every gateway has both. Neither is a product. Each is a function that the customer
+configures.
 
-**Every published pricing model is always-on.** A percentage skim on money in (OpenRouter
-5.5% on Stripe credits; Cloudflare Unified Billing 5%), a flat subscription metered on
-request or log volume, an enterprise license, or plain per-token rates. No surveyed vendor
-charges only when a failover fires. Two caveats belong with that finding and are recorded
-in the reference: no incumbent has *validated* incident-conditional pricing either —
-unclaimed is not the same as proven — and two vendors sell enterprise contracts with no
-public rate card, so a private term cannot be ruled out from desk research.
+**Every published price is always-on.** Examples are a percentage of money received, a flat
+subscription for a volume of requests, and a price for each token. No surveyed vendor
+charges only for a failover. Two limits apply to this result. No vendor has proved the
+opposite model. Two vendors publish no rate card, so we cannot exclude a private term.
 
-**Resilience and optimization do not compose at the market leader.** OpenRouter's
-uptime-aware load balancing is *disabled* the moment a customer sets `sort` or `order`. A
-customer who asks for cheap traffic stops getting availability-aware routing, and nothing
-tells them that trade was made. This is the sharpest single fact in the survey, because it
-shows that even where the machinery exists, it is exposed as a switch the customer flips
-rather than an outcome the vendor holds.
+**Resilience and optimization do not work together at the largest vendor.** OpenRouter stops
+its uptime-aware load balance when the customer sets `sort` or `order`. A customer who asks
+for a low cost then loses the availability function. Nothing tells the customer about this
+result.
 
-What is genuinely unclaimed: a bypass-by-default architecture, target-state routing that
-continuously renegotiates a mix toward a declared outcome, pricing a reservation's idleness,
-and selling the cross-customer strain signal itself. Two players aggregate multi-tenant
-health data at all; one feeds it to its own routing and one publishes it without routing on
-it. Nobody coordinates load across customers to pre-empt a 429.
+Four things are unclaimed in the market:
+
+- A gateway that stays out of the request path.
+- Routing to a stated outcome.
+- A price for an idle *reservation*.
+- The sale of cross-customer evidence about *provider strain*.
 
 ## 3. The claim
 
-**A customer states an outcome per class of traffic, and the system either holds it or
-reports why it cannot — in a form the customer can interrogate.**
+A customer states an outcome for one class of traffic. The gateway then holds that outcome.
+Or the gateway reports why it cannot hold it. The customer can examine the report.
 
-The unit is the *workload*, not the customer and not the model. An interactive chat path
-and a batch summarization path want opposite trade-offs, and a single customer-wide target
-cannot serve both. A target consists of ceilings or floors over a **closed vocabulary of
-three** dimensions — `p95_ms`, `cost_per_1k_tokens_usd`, `success_rate` — one objective to
-minimize, a priority order deciding which ceiling yields first, at most one *hard*
-dimension that fails the request rather than being breached, and a required non-empty
-`allowed_models` list that is the customer's explicit blast radius.
+The unit is the *workload*. It is not the customer and not the model. An interactive
+workload and a batch workload need opposite results. One target for a whole customer cannot
+serve both.
 
-The vocabulary is closed under a stated admission rule: **a targetable dimension is a
-property of a provider the customer could in principle verify, not a property of the
-customer base.** That rule is what excludes rate-limit headroom, which is the case that
-produced it — headroom is a property of a cohort at a moment, so it has no capability floor
-to be checked against and would abstain permanently. Model quality is excluded on a
-different ground: scoring it would make this a benchmarking service, and `allowed_models`
-gives the customer the control they actually wanted without one.
+A *target* has five parts:
 
-Two things follow that are worth more than the vocabulary itself.
+- Ceilings or floors on the *dimensions*. The vocabulary of dimensions is closed. It holds
+  `p95_ms`, `cost_per_1k_tokens_usd` and `success_rate`.
+- One *objective*. This is the dimension to minimize.
+- A priority order. This order shows which ceiling yields first.
+- Not more than one *hard dimension*. The gateway fails the request instead of a breach.
+- *Allowed models*. This list is necessary and must not be empty. It is the customer's blast
+  radius.
 
-**Infeasibility is two states, never one** ([ADR 0001](../adr/0001-declaration-time-vs-observed-infeasibility.md)).
-`infeasible_by_declaration` means no allowed provider *plausibly can* satisfy the target;
-it is checked synchronously at write time and the write is rejected, so an impossible target
-cannot be deployed. `unmet` means no mix *has* held the target over the measurement window;
-it is a runtime state entered after two consecutive missed windows and left after two
-consecutive held ones. The two have different truth conditions, different detection
-latencies, and different meanings to the customer, and collapsing them would make the
-report useless.
+One rule keeps the vocabulary closed. A dimension must be a property of a provider that the
+customer can verify. A dimension must not be a property of the customer base. This rule
+excludes rate-limit headroom, because headroom is a property of a *cohort* at one moment.
+Headroom has no *capability floor*, so the feasibility check must *abstain* for it always.
 
-**A decision that cannot state why must not be made.** Both reports are diagnoses rather
-than alarms: each names the dimension at fault, the targeted value, and the binding reason —
-and for a rejection, the best achievable value, which provider achieves it, and the
-provenance and age of the capability floor the rejection rests on. A bare number is not
-disputable, and disputing it is the customer's only recourse against a floor that is wrong.
-The same standard binds routing itself: the routing seam returns a decision carrying
-per-candidate rejection reasons, not a provider, precisely so the reason cannot be
-reconstructed from logs afterwards.
+Model quality is excluded for a different reason. A score for model quality makes this
+product a benchmark service. *Allowed models* gives the customer the necessary control
+without a score.
 
-## 4. The architectural bet
+Two results are more important than the vocabulary.
 
-In normal operation the gateway is a control plane and nothing else. The connector — a small
-package the customer installs at their call site, with zero runtime dependencies outside the
-Node standard library — makes the provider call itself, using the customer's own credential,
-which never reaches the gateway. The gateway holds the target document, checks feasibility,
-measures rolling windows, runs the `unmet` state machine, and pushes ranked provider lists.
+**Infeasibility is two states.** It is never one state. See
+[ADR 0001](../adr/0001-declaration-time-vs-observed-infeasibility.md).
 
-The connector holds exactly one routing rule of its own: on a network error, a 429, or a
-5xx, try the next provider in the list. All policy stays gateway-side
-([ADR 0006](../adr/0006-routing-authority-stays-gateway-side.md)), so exactly one
-implementation of the routing decision exists and exactly one authoritative binding reason
-is produced. The pushed list is derived by calling the same routing function repeatedly
-rather than by a second comparator, specifically so a second implementation cannot come
-into existence.
+- *Infeasible by declaration* means that no allowed provider can satisfy the target. The
+  gateway knows this before traffic flows. The gateway rejects the write of the
+  *target document*. The customer cannot deploy an impossible target.
+- *Unmet* means that no group of allowed providers has held the target. This is a runtime
+  state. The gateway enters it after two missed *windows*. The gateway leaves it after two
+  held windows.
 
-Two consequences carry the argument.
+The two states have different truth conditions and different meanings. The gateway must not
+combine them.
 
-**A gateway outage cannot stop customer traffic.** The connector keeps calling whichever
-provider it was last told to prefer. The gateway is therefore not a worse single point of
-failure than the providers it manages — which is the fail-open boundary the specification
-states as a hard requirement. The price is precise and stated rather than hidden: a target
-change takes effect within about five seconds rather than instantly, and a `200` on the
-target write means *committed*, not *in force in every process*.
+**A decision must give its reason.** Each report is a diagnosis and not an alarm. Each report
+must name the dimension at fault, the target value and the *binding reason*. A rejection must
+also name the best achievable value, the provider that achieves it, and the *provenance* of
+the capability floor. A number alone is not disputable. A dispute is the customer's only
+recourse against a wrong floor.
 
-This also changes what an availability commitment can even be about. Because the gateway is
-out of the path, **a control-plane outage is not observable to the customer** — their
-traffic just continues to the last-directed provider. So the credit for one is measured by
-the gateway itself and issued unprompted. A credit only the vendor can detect is either a
-written commitment or nothing at all.
+The same rule applies to routing. The routing function returns a decision and not a provider.
+The decision holds a reason for each rejected candidate. The gateway must not build the
+reason from logs later.
 
-**Connector-reported usage is the only input the measurement windows have.** This is the
-fragile half of the bet, and it is stated here because it has already broken once
-invisibly: usage reports were persisted for billing and never folded into the measurement
-windows, which left every provider `insufficient_data` forever and made `unmet` unreachable
-— while every unit test passed, because every test of `unmet` reached the windows through
-the in-path code path. The defect was caught by an end-to-end check, not by the unit suite.
-The story is in the
-[connector ExecPlan's *Surprises & Discoveries*](../exec-plans/completed/2026-08-15-connector-and-reservation-aware-routing.md),
-and it is the best short read in this repository for anyone deciding whether to trust the
-rest of it.
+## 4. The central choice
 
-## 5. What the architecture forecloses
+The gateway is a control plane in normal operation. The *connector* calls the provider. The
+customer installs the connector at the call site. The connector uses the customer's own
+provider credential. That credential never reaches the gateway.
 
-An out-of-path control plane is not free. Four costs are structural, not schedule-driven,
-and an evaluator should weigh them against section 4 rather than after it.
+The gateway does five things:
 
-**Budget enforcement is soft by default.** A synchronous "deny this call, it would exceed
-budget" decision requires being at the moment of the call. So budget follows the same
-push-and-reconcile shape as routing: the gateway pushes a snapshot, the connector
-self-enforces, usage reports reconcile. Overspend is **bounded, not eliminated** — roughly
-`report_interval × max_burn_rate` ([ADR 0008](../adr/0008-budget-enforcement-is-async-connector-side-by-default.md)).
-Whether the market accepts that bound is the single question most likely to invalidate the
-central bet, and it is open (#21).
+- It holds the *target document* and the reservation document.
+- It checks the feasibility of a target at the time of the write.
+- It measures a *window* for each workload and provider.
+- It operates the *unmet* state machine.
+- It sends a *ranked list* in a *directive*.
 
-**Some customers cannot install a connector at all.** A team on a managed platform with no
-access to its own call site, or a regulated buyer who needs zero-overrun spend control, is
-not unwilling — they are unable. The proposed answer is that in-path mode is **one
-mechanism, a connector the gateway operates**, consuming the same ranked list from the same
-control plane, rather than a second product with its own routing implementation
-([ADR 0009](../adr/0009-in-path-mode-is-a-gateway-operated-connector.md)). The out-of-path
-guarantee then narrows from a product-wide property to a per-workload one, which is a real
-loss and is stated as one.
+The connector holds one local routing rule. On a network error, a status 429 or a status
+5xx, the connector tries the next provider in the *ranked list*. All policy stays in the
+gateway. See [ADR 0006](../adr/0006-routing-authority-stays-gateway-side.md). Therefore one
+implementation of the routing decision exists. The gateway makes the ranked list with
+repeated calls to the same routing function. A second implementation cannot occur.
 
-**A cohort-driven routing shift is less auditable than an interception window.** When the
-gateway is in the path during a window it writes a per-request response header into logs it
-does not control — the one part of the record the customer holds independently of us. A
-shift made in normal operation cannot have that, because we were never in the path to prove
-what we did. The strongest audit surface in the product is structurally unavailable exactly
-where the anonymization question is sharpest. The customer gets the binding reason on the
-status resource instead, and the asymmetry is disclosed rather than smoothed over.
+This choice gives two results.
 
-**A wrong capability floor is indistinguishable from provider degradation.** The feasibility
-check runs against floors that no provider publishes and that are therefore sourced by
-measurement, carrying a provenance tier and an age
-([ADR 0003](../adr/0003-provenance-tiered-capability-catalogue.md)). A too-optimistic floor
-costs the customer a wait until `unmet`. A too-pessimistic one costs them a capability they
-could have had, **silently and with no signal**, because a rejected target produces no
-traffic to prove us wrong. Rejection is therefore deliberately biased against itself: a
-target is rejected only when it fails the most optimistic candidate floor by more than that
-floor's own variance, and when every source for a candidate has gone stale the check
-**abstains and the write is accepted.** The residue is honest and narrow: a cold-start floor
-is trusted, not verified, because the only thing that would validate it is the traffic whose
-feasibility we are trying to decide.
+**A gateway failure cannot stop customer traffic.** The connector continues with its last
+*ranked list*. The gateway is therefore not a worse single point of failure than the
+providers. This is the *fail-open* property. The cost is exact. A change to a target needs
+approximately 5 seconds. A status 200 for a write means committed. It does not mean in force
+in each process.
 
-## 6. Privacy is a design constraint, not a policy page
+This result also changes the subject of a credit. The customer cannot see a control-plane
+failure, because the traffic continues to the last provider. Therefore the gateway measures
+its own *control-plane availability*. The gateway then issues the credit without a request
+from the customer. A credit that only the vendor can detect is a written commitment or
+nothing.
 
-The product's network effect — one customer's traffic straining a provider moves another
-customer's routing before they see a 429 — is also its largest disclosure surface. The
-mechanisms that bound it are architectural, and four of them are worth an evaluator's
-attention.
+**The reports from the connector are the only input to the windows.** This is the weak part
+of the choice. It failed one time and nobody saw the failure. The gateway kept the usage
+reports for a price calculation. The gateway did not put them into the windows. Each provider
+then stayed at *insufficient data* and *unmet* became unreachable. Each unit test passed. An
+end-to-end check found the defect. The record is in the
+[connector ExecPlan](../exec-plans/completed/2026-08-15-connector-and-reservation-aware-routing.md).
+Read its *Surprises & Discoveries* section first.
 
-**Contribution is a condition of service, and bounded in the same breath**
-([ADR 0007](../adr/0007-strain-contribution-is-a-condition-of-service.md)). A contribution
-carries only facts the provider side of the connection already observed — a status code and
-a latency, against the cell the request went to. Never content, token volumes, per-customer
-counts, or customer identity. A customer who contributes gives up nothing they hold
-exclusively. Opt-in was rejected because the cohort never forms and the behavior never
-starts; opt-out was rejected because it admits free-riding and silos the effect one tenant
-at a time. This is not a mechanism that makes leaving costly: contribution is a condition of
-*use* and stops when use stops.
+## 5. What the central choice prevents
 
-**Detection and disclosure are separate aggregates**
-([ADR 0005](../adr/0005-strain-evidence-detection-internal.md)). Detection reads the
-internal aggregate at fine granularity, because a detector reading the published feed would
-declare minutes after onset and forfeit the sub-second insertion the mechanism exists to
-provide. Disclosure reads only the contract-bound aggregate. The hazard this creates —
-a customer-facing surface reading the internal one — is a privacy failure no output-sampling
-test catches, so the guard is **structural**: what is enforced is that the wire between the
-two does not exist, and a wire fails the build rather than a review.
+The choice has four costs. Each cost is structural. A schedule cannot remove them.
 
-**There is no pollable strain surface.** A correlation attack needs a time series, and a
-time series needs an endpoint. Cohort-derived values are disclosed only as a snapshot
-attached to a decision record and never as a queryable resource. This replaces the
-publication delay that prior art for a published feed would have required — a provision
-recorded as *dropped*, with its reasoning, rather than silently omitted.
+**Budget control is not synchronous.** A synchronous refusal of a call must occur at the
+moment of the call. Therefore the gateway sends a budget snapshot to the connector. The
+connector then controls its own spend. The usage reports reconcile the spend later. The
+gateway bounds the overspend. The gateway does not remove it. The bound is approximately
+`report_interval` multiplied by `max_burn_rate`. See
+[ADR 0008](../adr/0008-budget-enforcement-is-async-connector-side-by-default.md). The market
+can possibly refuse this bound. That question is open and is issue #21.
 
-**The thresholds are stated and their arithmetic is shown.** No cohort-derived value is
-disclosed below **twenty** contributors to a cell — twenty rather than ten precisely because
-condition-of-service makes every recipient a contributor, so subtracting one's own
-contribution must still leave ten others. Cell keys collapse on disclosure from
-`(provider, model, region)` to `(provider, model-family)`, because a sparsely used region is
-close to naming its occupants. A customer receives at most one disclosure per cell per
-bucket however many workloads they run, or forty workloads reconstruct by repetition what
-the minimum exists to prevent. Cohort size and composition are never disclosed at all.
+**Some customers cannot install a connector.** A team on a managed platform has no access to
+its call site. A regulated customer needs a synchronous refusal of a call. These customers
+are not unwilling. They are unable. The proposal is one mechanism for them. The gateway
+operates a connector for the customer. See
+[ADR 0009](../adr/0009-in-path-mode-is-a-gateway-operated-connector.md). The out-of-path
+property then applies to each workload and not to the whole product. This is a real loss.
 
-The consequence is a disclosure asymmetry stated to the customer rather than hidden: between
-ten contributors and twenty, the behavior runs and the customer learns *that* cohort evidence
-moved their routing and what corroborated it — but not how strained the provider is.
+**A routing change from cohort evidence is weaker evidence than an *interception window*.**
+The gateway is in the request path during a window. The gateway then writes a header on each
+intercepted response. That header goes into logs that the customer holds. The gateway cannot
+do this in normal operation, because the gateway is not in the path. The strongest evidence
+is therefore absent where the privacy question is most difficult. The customer gets the
+*binding reason* on the status resource instead. The paper states this difference. It does
+not hide it.
 
-## 7. Pricing
+**A wrong *capability floor* looks like a slow provider.** No provider publishes a latency
+floor. Therefore each floor comes from measurement and carries a *provenance* tier and an
+age. See [ADR 0003](../adr/0003-provenance-tiered-capability-catalogue.md).
 
-The customer-facing promise is **not** "you are billed only during incidents." It is: *you
-do not pay for our presence in your request path; you pay for provider risk absorbed.*
+- A floor that is too optimistic costs the customer a wait until *unmet*.
+- A floor that is too pessimistic costs the customer a capability. The customer gets no
+  signal. A rejected target makes no traffic, so no evidence of our error can occur.
 
-The [specification's `Accepted` pricing model](../product-specs/provider-risk-management-gateway.md#pricing-model)
-is a flat subscription tiered on **spend under management** — the customer's provider spend
-for managed traffic, computed from the connector's reported token counts against a published,
-forward-only rate card kept deliberately separate from the capability catalogue. The two
-carry the same units and incompatible obligations: a capability floor may abstain and may be
-corrected backwards, and a billing rate may do neither. There is no percentage of spend, no
-per-request markup, and no per-incident fee.
+The gateway therefore rejects a target with caution. The target must fail the most optimistic
+candidate floor by more than the variance of that floor. The check must *abstain* when each
+source for a candidate is stale. The gateway then accepts the write. One weakness remains. A
+floor for a new model is trusted and not verified, because only the new traffic can verify
+it.
 
-Three commitments make that model self-consistent, and each removes an incentive rather than
-adding a promise:
+## 6. Privacy is a design constraint
 
-- **Interception costs nothing beyond the subscription**
-  ([ADR 0004](../adr/0004-incidents-included-not-surcharged.md)). The gateway declares the
-  window, and a gateway paid by its own declarations cannot be trusted to declare honestly.
-  Margin is therefore worst in the month a provider degrades badly. That is accepted.
-- **The one place detection touches money runs the other way.** When strain is present and
-  the gateway fails to push a directive the connector acknowledges, that period counts
-  against control-plane availability and produces a credit. The gateway loses money by
-  failing to open a window and gains nothing by opening one — the exact inverse of the
-  surcharge that was rejected.
-- **Bypass is free in both directions.** Involuntary bypass earns a self-issued credit.
-  Voluntary bypass — remove the connector, stop paying — is permitted, and no mechanism
-  exists to make it costly, because any such mechanism would make this the always-on
-  middleman the non-goals forbid. Retention rests on the connector degrading to a static
-  base URL without a live control plane. If that is not enough, the product is wrong, and
-  that is to be learned from churn rather than prevented by lock-in.
+The network effect of this product is also its largest disclosure surface. One customer's
+traffic strains a provider. Another customer's routing then moves before a status 429. Four
+mechanisms bound the disclosure.
 
-Reservations follow the same logic: a reservation is customer-held and customer-declared,
-the gateway never buys or holds provider capacity, and nothing is reclaimed onto the
-gateway's invoice. Holding the reservation would mean that bypassing the gateway forfeits
-capacity the customer paid for, which inverts the promise above.
+**A *strain contribution* is a condition of service.** See
+[ADR 0007](../adr/0007-strain-contribution-is-a-condition-of-service.md). A contribution
+holds only the status code and the latency of one request. It never holds content, token
+counts, per-customer counts or an identity. The provider side already saw each of these
+facts. Therefore the customer gives up nothing exclusive.
 
-### The rate structure is unresolved, and the drafts disagree
+Two alternatives failed. An opt-in never makes a *cohort* of sufficient size, so the behavior
+never starts. An opt-out permits a customer to use cohort evidence and contribute none. A
+contribution is not a hold on the customer. It stops when the use stops.
 
-An evaluator should know that this repository currently contains two incompatible pricing
-shapes, and that the disagreement is live rather than editorial.
+**Detection and disclosure use two aggregates.** See
+[ADR 0005](../adr/0005-strain-evidence-detection-internal.md). Detection reads the internal
+aggregate at a fine granularity. A detector that reads a published surface declares minutes
+late. Disclosure reads only the aggregate that the contract bounds. This makes one hazard: a
+customer-facing surface can read the internal aggregate. A test of the outputs cannot find
+this hazard. Therefore the control is structural. The connection between the two aggregates
+must not exist. Such a connection fails the build.
 
-[`pricing-strategy.md`](../product-specs/pricing-strategy.md) is a `Draft` that proposes a
-different structure: priced per **connector** with a free allowance and volume discounts,
-plus an optional percentage-of-spend path at a proposed 2–3%. That is not the `Accepted`
-specification's model, which is tiered on spend under management and explicitly excludes a
-percentage of spend.
+**No surface gives a time series of *provider strain*.** A correlation attack needs a time
+series. A time series needs an endpoint. The gateway discloses a cohort-derived value only as
+part of one decision record. The gateway never serves it from a queryable resource.
 
-Nothing in this paper resolves that. Two things narrow it:
+**The thresholds are stated.** The gateway discloses no cohort-derived value below 20
+contributors to a *cell*. The number is 20 and not 10, because each recipient is also a
+contributor. Subtraction of the recipient's own contribution must leave 10 others. A
+disclosed key is no finer than `(provider, model-family)`, because a small region can
+identify its occupants. A customer gets not more than one disclosure for each cell in each
+bucket. The gateway never discloses the size or the members of a *cohort*.
 
-- [ADR 0011](../adr/0011-billing-unit-is-the-managed-workload.md) (*proposed*) settles what
-  is being counted, though not the rate: the billing unit is the managed **workload**, and
-  the word *connector* is retired from pricing language entirely. An architectural connector
-  is a process; a customer running one service across twelve autoscaled replicas runs twelve
-  of them and would be billed twelve times for one integration, on a number our
-  infrastructure decides rather than they do.
-- The draft records, in its own Constraints, that no infra cost or capacity sizing exists
-  for this product, so every rate in it is derived from competitor comparison rather than
-  from measured cost.
+One result follows. Between 10 and 20 contributors the behavior operates. The customer then
+learns that cohort evidence moved the routing. The customer does not learn a *band*. The
+gateway states this difference to the customer.
 
-The rate structure and its rates are therefore an open decision (#22), and the honest
-summary is that no number in the draft came from a customer or from our own measured
-infrastructure cost.
+## 7. Price
 
-## 8. Evidence, and what it does not establish
+The promise to the customer is not a price for each failure. The promise is different. The
+customer does not pay for our presence in the request path. The customer pays for the
+provider risk that we absorb.
 
-The proof artifacts are commands rather than prose, and they are listed with what each
-proves in the specification's
-[Delivery evidence](../product-specs/provider-risk-management-gateway.md#delivery-evidence)
-section. The two worth running yourself:
+The [specification](../product-specs/provider-risk-management-gateway.md#pricing-model) is
+`Accepted`. It gives one flat subscription. The tier follows *spend under management*. The
+gateway computes that quantity from the token counts of the connector and the *rate card*.
+The rate card changes only forward. The *capability floor* can *abstain* and can change
+backwards. Therefore the two artifacts stay separate. The specification has no percentage of
+spend, no markup for each request and no charge for each failure.
+
+Three commitments keep this model consistent. Each commitment removes an incentive.
+
+- **An *interception window* costs nothing more than the subscription.** See
+  [ADR 0004](../adr/0004-incidents-included-not-surcharged.md). The gateway declares the
+  window. A gateway that its own declarations pay cannot declare honestly. The margin is
+  therefore worst in a month with a bad provider. We accept this.
+- **One case connects detection and money, in the opposite direction.** *Provider strain* is
+  present. The gateway does not send a *directive* that the connector acknowledges. That
+  period counts against *control-plane availability* and makes a credit. The gateway
+  therefore loses money when it fails to open a window. The gateway gains nothing when it
+  opens one.
+- **A bypass is free in both directions.** An involuntary bypass makes a credit. For a
+  voluntary bypass the customer removes the connector and stops the payment. No mechanism
+  makes this costly. Such a mechanism makes this product the always-on service that the
+  non-goals prohibit. Retention depends only on the value of a live control plane.
+
+A *reservation* follows the same logic. The customer holds it and declares it. The gateway
+never buys, holds or resells provider capacity. Custody of a reservation makes a bypass
+costly, and this inverts the promise.
+
+### The rate structure is open, and two documents disagree
+
+This repository holds two different price structures. The disagreement is real.
+
+- The specification is `Accepted`. The tier follows *spend under management*. It excludes a
+  percentage of spend.
+- [`pricing-strategy.md`](../product-specs/pricing-strategy.md) is a `Draft`. It gives a
+  price for each connector, a free allowance and a volume discount. It also gives an
+  alternative percentage of spend at 2 to 3 percent.
+
+This paper does not solve the disagreement. Two facts make it smaller:
+
+- [ADR 0011](../adr/0011-billing-unit-is-the-managed-workload.md) is *proposed*. It decides
+  the unit and not the rate. The unit is the managed *workload*. The word *connector* leaves
+  the price language. A connector is a process. A customer with 12 replicas of one service
+  operates 12 connectors. A price for each connector bills that customer 12 times for one
+  integration. Our infrastructure decides that number, and the customer does not.
+- The draft records in its own constraints that no cost or capacity data exists for this
+  product. Each rate in the draft comes from a comparison with competitors.
+
+The rate structure is therefore open. It is issue #22. No number in the draft comes from a
+customer or from a measurement of our own cost.
+
+## 8. The evidence and its limits
+
+The evidence is a set of commands. The specification lists each command and its result in
+[Delivery evidence](../product-specs/provider-risk-management-gateway.md#delivery-evidence).
+Run these two commands:
 
 ```bash
 npm --prefix gateway run e2e
@@ -339,62 +305,61 @@ npm --prefix gateway run e2e
 npm --prefix gateway run load
 ```
 
-The first drives seven end-to-end checks, including *no chat-completion request appears in
-the gateway's access log at all*, a target switch reaching the connector within five seconds
-with its acknowledgement recorded, the sample application surviving the gateway being
-killed, and `unmet` reached on connector reports alone with zero in-path requests. The
-second fails — exits non-zero — if setting a target does not move the traffic split, which
-is the point: an artifact that cannot fail is not evidence. It has caught two real defects
-the unit suite, green throughout, could not see.
+The first command makes seven end-to-end checks. Examples: no chat-completion request occurs
+in the access log of the gateway; a change of a target reaches the connector in 5 seconds
+with an acknowledgement; the sample application continues after the stop of the gateway;
+*unmet* occurs from connector reports alone. The second command fails when a target does not
+move the traffic. This is necessary. An artifact that cannot fail is not evidence. This
+command found two real defects. The unit tests were green for both defects.
 
-What is proven: all six behavior-1 criteria, the three connector criteria, the behavior-4
-reservation criterion, and the fail-open boundary. Behaviors 2, 3 and 5 are unclaimed, on
-stated triggers rather than on a schedule.
+The evidence proves these items:
 
-What the evidence does **not** establish, and no reader should infer:
+- The six criteria of behavior 1.
+- The three criteria of the connector.
+- The criterion of behavior 4 for a *reservation*.
+- The *fail-open* criterion.
 
-- **Every run is against stub providers on localhost.** No deployment, no cloud account. The
-  capability catalogue's realistic-looking floors are plausible numbers, not measurements.
-  One opt-in, credential-gated command has reached a real provider and gotten a real
-  response; it is a smoke test, and **no capability floor has ever been measured.**
-- **`success_rate` is measured and honored but never driven to breach** by any verification
-  artifact. The two dimensions with named artifacts are `p95_ms` and
+Behaviors 2, 3 and 5 are unclaimed. Each has a stated trigger and not a date.
+
+The evidence does not prove these items. A reader must not infer them.
+
+- **Each run uses simulated providers on one host.** No deployment and no cloud account
+  exists. Each *capability floor* in the catalogue is a plausible number. One opt-in command
+  reached a real provider one time. It is a smoke test. **No capability floor is measured.**
+- **No artifact drives `success_rate` to a breach.** The artifacts use `p95_ms` and
   `cost_per_1k_tokens_usd`.
-- **The connector contributes strain evidence but aggregates and discloses nothing**, so no
-  behavior-3 criterion is claimed.
-- **No pricing-model criterion is claimed.** The availability credit, invoice invariance, and
-  window records all depend on behavior 2.
-- **CI runs and is green but cannot be made required** on this repository's plan, so a red
-  run does not block a merge.
-- **A known defect is open:** a non-default customer's usage reports corrupt the default
-  customer's status, demonstrated by an end-to-end check today. It must be fixed before
+- **The connector sends a *strain contribution*. The gateway aggregates nothing and
+  discloses nothing.** Therefore no criterion of behavior 3 is claimed.
+- **No criterion of the price model is claimed.** The credit, the invoice and the window
+  records need behavior 2.
+- **The build runs and is green. It cannot be a necessary check on this repository.**
+  Therefore a red build does not stop a merge.
+- **One defect is open.** The usage reports of a second customer corrupt the status of the
+  first customer. An end-to-end check shows this today. A repair must occur before
   multi-tenancy.
 
-## 9. What an evaluator should decide
+## 9. The decisions for the reader
 
-Seven questions cannot be answered from the code. Each has an argument already in progress,
-linked from
-[the handoff index's *Decisions still open*](index.md#decisions-still-open); they are named
-here in the order in which one answer changes another.
+Seven questions have no answer in the code. Each question has an argument in progress. The
+links are in [the handoff index](index.md#decisions-still-open). The order below is the order
+in which one answer changes the next.
 
-1. **Is soft-budget-by-default viable?** If most of the market needs hard budget, the central
-   architectural bet is wrong, and every other question changes shape.
-2. **Do we pursue in-path mode alongside the out-of-path connector?** It decides whether
-   hard budget, compliance-constrained buyers, and teams without call-site control are
-   addressable at any price.
-3. **Do we take custody of provider credentials to reduce onboarding friction?** It trades
-   real liability — a credential vault whose value is unrelated to our size — for
-   convenience, and it decides what class of company this is.
-4. **Which rate structure, and which rates?** See section 7. No number came from a customer
-   or from measured cost.
-5. **What is the infra cost and capacity profile of the push model?** Held-open SSE sockets
-   per connector are cheap, but "cheap" has never been quantified here, and every
-   cost-grounded rate waits on it.
-6. **Does this ship standalone, fold into `Gateway-LLM` as its routing layer, or run as one
-   policy core with two hosts?** See [the comparison](gateway-llm-comparison.md);
-   `Gateway-LLM` is acquiring every part of this product except target-state routing.
-7. **What is the productionization sequence?** Multi-quarter, and its first phase is a
-   design partner, which costs almost nothing.
+1. **Is an asynchronous budget control sufficient for the market?** A negative answer makes
+   the central choice wrong. Each other question then changes.
+2. **Do we operate a connector for customers who cannot install one?** This answer decides
+   whether those customers are possible at any price.
+3. **Do we hold provider credentials to make the installation easier?** A store of customer
+   credentials is a target. Its value does not depend on our size. This answer decides the
+   class of our company.
+4. **Which rate structure, and which rates?** See section 7.
+5. **What is the cost and the capacity of the push model?** One socket for each connector is
+   cheap. Nobody has measured "cheap" here. Each rate from our own cost waits for this
+   measurement.
+6. **Does this product ship alone, or become the routing layer of `Gateway-LLM`?** See
+   [the comparison](gateway-llm-comparison.md). `Gateway-LLM` acquires each part of this
+   product except the routing to a stated outcome.
+7. **What is the sequence to production?** The sequence is multi-quarter. Its first phase is
+   one design partner and costs almost nothing.
 
-The paper's own recommendation is narrow: question 1 is cheap to answer and expensive to be
-wrong about, and it gates the rest. It needs conversations with buyers, not code.
+This paper gives one recommendation. Answer question 1 first. It is cheap to answer and
+expensive to get wrong. It needs conversations with customers and not code.
