@@ -9,6 +9,7 @@ State vocabulary: `Draft`, `Accepted`, `Delivered`, `Superseded`.
 | Specification | User and problem | State | Delivery evidence | Owner | Reviewed |
 |---|---|---|---|---|---|
 | [provider-risk-management-gateway.md](provider-risk-management-gateway.md) | Teams on hosted AI providers exposed to provider failure, degradation, and idle-capacity waste | Accepted | Partial — behaviors 1 and 4 and the connector, proven by `npm --prefix gateway run e2e` and `run load` at `e20ebea`; behaviors 2, 3, 5 unclaimed. See the spec's [Delivery evidence](provider-risk-management-gateway.md#delivery-evidence) | henry.tran@uniblock.dev | 2026-08-16 |
+| [pricing-strategy.md](pricing-strategy.md) | The business and prospective customers need a documented, cost-driver-aligned pricing structure | Draft | None — no rate card or billing implementation exists | henry.tran@uniblock.dev | 2026-08-17 |
 
 ## Entry contract
 
