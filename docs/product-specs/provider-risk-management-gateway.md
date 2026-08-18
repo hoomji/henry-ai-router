@@ -912,7 +912,7 @@ behavior.
 
 Partially delivered as of 2026-08-16, at `e20ebea` on `master`. Behavior 1's decision
 engine, the *connector*, and behavior 4 are implemented and have executable proof.
-Behaviors 2, 3 and 5 are unclaimed, on the triggers recorded in [Behavior sequence and
+Behaviors 2, 3 and 5 are *deferred*, on the triggers recorded in [Behavior sequence and
 deferrals](#behavior-sequence-and-deferrals).
 
 Two ExecPlans carry the work and their own acceptance evidence:

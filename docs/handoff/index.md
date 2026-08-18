@@ -22,16 +22,19 @@ Read these four and you have the proposal. Everything else in this file is depth
 | 3 | [`ARCHITECTURE.md`](../../ARCHITECTURE.md) | How it is put together and what must not be broken | 10 min |
 | 4 | [`gateway-llm-comparison.md`](gateway-llm-comparison.md) | How this relates to `Gateway-LLM`, what overlaps, and what is still only here | 15 min |
 
-Two synthesis documents sit across that set rather than inside it. Neither is authoritative
-for any fact — both link to the document that owns it — so read them for the argument and the
-shape, and follow the links when a number matters. Both are written in ASD-STE100 Simplified
-Technical English using the [`CONTEXT.md`](../../CONTEXT.md) glossary, so they read flatter
-than the documents they summarize; that is deliberate.
+Four synthesis documents sit across that set rather than inside it. None is authoritative
+for any fact — each links to the document that owns it — so read them for the argument and the
+shape, and follow the links when a number matters. All but the plain-language overview are
+written in ASD-STE100 Simplified Technical English using the
+[`CONTEXT.md`](../../CONTEXT.md) glossary, so they read flatter than the documents they
+summarize; that is deliberate.
 
 | Document | What it answers | Length |
 |---|---|---|
+| [`plain-language-overview.md`](plain-language-overview.md) | The pitch and the mechanism in ordinary prose — the one document in this set not written in Simplified Technical English. Start here if the STE register reads oddly | 5 min |
 | [`white-paper.md`](white-paper.md) | Why provider risk is a product, why the out-of-path choice is the mechanism, what that choice prevents, and what the evidence does not establish | 15 min |
 | [`../design-docs/technical-blueprint.md`](../design-docs/technical-blueprint.md) | The target architecture across both runtimes and all five behaviors: five control loops, seven system invariants, where the deferred behaviors attach | 20 min |
+| [`customer-profiles-and-build-vs-buy.md`](customer-profiles-and-build-vs-buy.md) | Who buys this, what each customer states, and why a customer does not build the same thing — three profiles and the three tiers of the build-or-buy argument | 10 min |
 
 ## Product intent
 

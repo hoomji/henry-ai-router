@@ -15,10 +15,10 @@ Three paths, depending on how much time you have:
 
 Bring a note of every place you disagree. The last step is what to do with those notes.
 
-### Two synthesis documents, and when to use them
+### Three synthesis documents, and when to use them
 
-Two documents cut across this path rather than sitting inside it. Neither is authoritative
-for any fact — both link to the document that owns it — and both are written in ASD-STE100
+Three documents cut across this path rather than sitting inside it. None is authoritative
+for any fact — each links to the document that owns it — and all three are written in ASD-STE100
 Simplified Technical English using the [`CONTEXT.md`](../../CONTEXT.md) glossary, so they read
 flatter than the documents they summarize.
 
@@ -26,6 +26,7 @@ flatter than the documents they summarize.
 |---|---|
 | [`white-paper.md`](white-paper.md) | **Instead of steps 1, 3 and 6** when you have 15 minutes and want the argument end to end: the claim, the mechanism, the four things the mechanism prevents, the price, and what the evidence does not prove. Then come back to step 8, which it does not replace |
 | [`../design-docs/technical-blueprint.md`](../design-docs/technical-blueprint.md) | **Before step 9**, or instead of it if you are not reading code. It gives the five control loops, the seven invariants that no single file shows, and the attachment point of each unbuilt behavior |
+| [`customer-profiles-and-build-vs-buy.md`](customer-profiles-and-build-vs-buy.md) | **After step 2**, when the question is commercial and not technical: which customer states what, and which benefits the customer can build alone. Read it as hypotheses — no customer and no interview exists |
 
 Read the specification itself, and not the white paper, if you intend to challenge a specific
 required behavior. The white paper compresses; the specification is what the product owes a

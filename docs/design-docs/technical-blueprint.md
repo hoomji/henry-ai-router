@@ -33,6 +33,10 @@ The division is strict. A duplicate fact makes two facts, and the two facts then
 Four parts are new in this document: the control loops in section 3, the invariants in
 section 4, the attachment points in section 8, and the alternatives in section 9.
 
+A reader with one question does not need the full document. Section 3 gives how the system
+moves. Section 4 gives what must stay true. Section 8 gives where an unbuilt behavior
+attaches. Section 10 gives what can prove the design wrong.
+
 ## Status
 
 Each section after this one gives the target architecture. This section gives the current
@@ -65,10 +69,10 @@ No *capability floor* is measured. See
                         ▼  │
     ┌─ the gateway: a control plane ───────────────────────────────────┐
     │  connector surface ─▶ usage input ─▶ windows                     │
-    │  management surface ─▶ target document ─▶ feasibility check       │
-    │  routing function (pure) ─▶ ranked list ─▶ directive scheduler    │
-    │  unmet state machine ─▶ status resource + signed notification     │
-    │  retained data path (behavior 2 only) ────────────────▶ provider  │
+    │  management surface ─▶ target document ─▶ feasibility check      │
+    │  routing function (pure) ─▶ ranked list ─▶ directive scheduler   │
+    │  unmet state machine ─▶ status resource + signed notification    │
+    │  retained data path (behavior 2 only) ───────────────▶ provider  │
     └──────────────────┬───────────────────────────────────────────────┘
                        │
               the target store: targets, reservations, window summaries,

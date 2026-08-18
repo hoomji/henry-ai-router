@@ -9,6 +9,15 @@ A white paper for technical readers.
 - Language: ASD-STE100 Simplified Technical English. The terms in *italics* are defined in
   [`../../CONTEXT.md`](../../CONTEXT.md).
 
+## Summary
+
+A customer states an outcome for each class of traffic. The gateway holds that outcome, or
+it reports why it cannot. The gateway stays out of the request path in normal operation. A
+*connector* in the customer's own process calls each provider with the customer's own
+credential. A gateway failure therefore cannot stop customer traffic. The price is one flat
+subscription. An incident costs nothing more. A credit for a control-plane failure is
+automatic. A customer who removes the connector stops the payment.
+
 This paper is not the authority for any fact. Each fact has one home in this repository.
 This paper gives a link to that home. If this paper and the linked document disagree, the
 linked document is correct. This paper is then a defect.
@@ -60,7 +69,56 @@ Four things are unclaimed in the market:
 - A price for an idle *reservation*.
 - The sale of cross-customer evidence about *provider strain*.
 
-## 3. The claim
+## 3. Build or buy
+
+The competitor in section 2 is not the largest competitor. The largest competitor is the
+customer's own engineer. Each customer of this product can build some part of it. The
+benefits therefore divide into three tiers. The three tiers have three different strengths.
+Do not argue them as one argument. The profiles that show each tier in use are in
+[customer profiles and the build-or-buy question](customer-profiles-and-build-vs-buy.md).
+
+**Tier 1. The customer can build this today.** Failover on a status 429 is approximately 50
+lines of code. A competent team writes it in one afternoon. This is not a reason to buy.
+The design gives this tier to the customer deliberately: failover on an error is a local
+rule in the *connector* at the customer's call site, and not a function of the gateway.
+
+**Tier 2. The customer can build this and does not maintain it.** Three items are in this
+tier.
+
+- A *capability floor* needs one number for each `(model, host, region, service_tier)`, its
+  *provenance* and its age. In-house this becomes a page in a wiki from an earlier month. A
+  stale number fails silently. The team then ships a target that nothing holds. The gateway
+  refuses the write and gives the reason, and it *abstains* when each source is stale.
+- The measurement discipline is not obvious. *Unmet* needs two missed *windows* to enter,
+  two held windows to leave, and an explicit *insufficient data* state below the sample
+  floor. An in-house version usually has no hysteresis, so its alarm oscillates.
+- An in-house routing rule holds what was true on the day of the write. The gateway makes a
+  new *ranked list* continuously from the usage reports of the connector.
+
+This tier is an argument about maintenance and not about capability. Each item is possible
+to build. Each item decays without continuous work. A team with sufficient time can refuse
+this argument correctly.
+
+**Tier 3. The customer cannot build this.** One customer's evidence about a provider is
+that customer's own traffic. The earliest possible detection is therefore the customer's
+own first failure. *Provider strain* aggregates a *strain contribution* from each connected
+customer into a *cell*, and the gateway moves one customer's traffic before that customer
+sees a status 429. No quantity of in-house work gives this result, because the necessary
+input is the traffic of other companies.
+
+Two limits apply to tier 3, and the paper does not hide them. Behavior 3 is not built. And
+the gateway discloses no cohort-derived value below 20 contributors to a cell, so an early
+customer gets a cohort that shows nothing. **The only benefit that a customer cannot build
+is also the benefit that arrives last.** An early customer buys tier 2.
+
+One objection follows from section 8. A bypass is free, and the connector degrades to a
+static base URL. A customer can therefore use the product, learn the routing, and keep the
+50 lines. Nothing prevents this, and the specification makes it deliberate. Two results
+follow. The argument to buy must never use a switching cost, because no switching cost
+exists and none may be added. And what the customer takes away is a copy of the routing at
+one moment, which starts to decay on the day of departure. That is a tier 2 argument.
+
+## 4. The claim
 
 A customer states an outcome for one class of traffic. The gateway then holds that outcome.
 Or the gateway reports why it cannot hold it. The customer can examine the report.
@@ -113,7 +171,7 @@ The same rule applies to routing. The routing function returns a decision and no
 The decision holds a reason for each rejected candidate. The gateway must not build the
 reason from logs later.
 
-## 4. The central choice
+## 5. The central choice
 
 The gateway is a control plane in normal operation. The *connector* calls the provider. The
 customer installs the connector at the call site. The connector uses the customer's own
@@ -155,7 +213,7 @@ end-to-end check found the defect. The record is in the
 [connector ExecPlan](../exec-plans/completed/2026-08-15-connector-and-reservation-aware-routing.md).
 Read its *Surprises & Discoveries* section first.
 
-## 5. What the central choice prevents
+## 6. The costs of the central choice
 
 The choice has four costs. Each cost is structural. A schedule cannot remove them.
 
@@ -196,7 +254,7 @@ source for a candidate is stale. The gateway then accepts the write. One weaknes
 floor for a new model is trusted and not verified, because only the new traffic can verify
 it.
 
-## 6. Privacy is a design constraint
+## 7. Privacy is a design constraint
 
 The network effect of this product is also its largest disclosure surface. One customer's
 traffic strains a provider. Another customer's routing then moves before a status 429. Four
@@ -235,7 +293,7 @@ One result follows. Between 10 and 20 contributors the behavior operates. The cu
 learns that cohort evidence moved the routing. The customer does not learn a *band*. The
 gateway states this difference to the customer.
 
-## 7. Price
+## 8. Price
 
 The promise to the customer is not a price for each failure. The promise is different. The
 customer does not pay for our presence in the request path. The customer pays for the
@@ -291,7 +349,7 @@ This paper does not solve the disagreement. Two facts make it smaller:
 The rate structure is therefore open. It is issue #22. No number in the draft comes from a
 customer or from a measurement of our own cost.
 
-## 8. The evidence and its limits
+## 9. The evidence and its limits
 
 The evidence is a set of commands. The specification lists each command and its result in
 [Delivery evidence](../product-specs/provider-risk-management-gateway.md#delivery-evidence).
@@ -319,7 +377,7 @@ The evidence proves these items:
 - The criterion of behavior 4 for a *reservation*.
 - The *fail-open* criterion.
 
-Behaviors 2, 3 and 5 are unclaimed. Each has a stated trigger and not a date.
+Behaviors 2, 3 and 5 are *deferred*. Each has a stated trigger and not a date.
 
 The evidence does not prove these items. A reader must not infer them.
 
@@ -338,7 +396,7 @@ The evidence does not prove these items. A reader must not infer them.
   first customer. An end-to-end check shows this today. A repair must occur before
   multi-tenancy.
 
-## 9. The decisions for the reader
+## 10. The decisions for the reader
 
 Seven questions have no answer in the code. Each question has an argument in progress. The
 links are in [the handoff index](index.md#decisions-still-open). The order below is the order
@@ -351,7 +409,7 @@ in which one answer changes the next.
 3. **Do we hold provider credentials to make the installation easier?** A store of customer
    credentials is a target. Its value does not depend on our size. This answer decides the
    class of our company.
-4. **Which rate structure, and which rates?** See section 7.
+4. **Which rate structure, and which rates?** See section 8.
 5. **What is the cost and the capacity of the push model?** One socket for each connector is
    cheap. Nobody has measured "cheap" here. Each rate from our own cost waits for this
    measurement.

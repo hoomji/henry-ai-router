@@ -225,6 +225,24 @@ decision and would be served from synthetic probes, contributing nothing to and 
 nothing from this aggregate.
 _Avoid_: Use *provider strain*, or *binding reason* for what the customer sees
 
+### Delivery status
+
+**Unclaimed**:
+A market position no surveyed vendor holds, established against published vendor
+documentation in [the competitive landscape
+reference](docs/references/2026-08-15-ai-gateway-competitive-landscape.md). A property of
+the *market*, never of this repository. Unclaimed is not proven: no vendor validating a
+position is not evidence the position works.
+_Avoid_: Novel, differentiated, whitespace, greenfield; and never for a behavior this
+repository has not built — that is *deferred*
+
+**Deferred**:
+Required behavior this repository specifies but has not built, held on a stated trigger
+rather than a date. A property of *this repository*, never of the market. Triggers are
+recorded in the spec's *Behavior sequence and deferrals*; what is built is separated from
+what is proven in its *Delivery evidence*.
+_Avoid_: Unclaimed, unbuilt, pending, roadmap, planned, future
+
 ### Commerce
 
 **Spend under management**:

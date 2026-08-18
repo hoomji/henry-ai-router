@@ -53,6 +53,24 @@ coordinates load across customers to pre-empt 429s.
 | Target-state routing ("hold p95 < 400ms under $Y/mo") | **Mostly unclaimed** | Closest: OpenRouter `preferred_max_latency`/`preferred_min_throughput` filters and Cloudflare budget-cap nodes — static constraints, none continuously renegotiate a provider mix toward a stated target |
 | Collective fatigue-aware routing (cross-customer strain signals) | **Partially claimed** | OpenRouter consumes pooled health internally; Helicone publishes it but does not route on it; the signal itself is not sold anywhere |
 
+### Candidate names in this table are superseded
+
+This reference was written against the `IDEA.md` candidate names of 2026-08-15. The
+market findings above still stand as retrieved; the *names* and, in one case, the
+behavior itself do not. The current statement of what is unclaimed in the market is
+[the white paper, section 2](../handoff/white-paper.md); the behaviors themselves are
+specified in [the product spec](../product-specs/provider-risk-management-gateway.md).
+
+| Name in this table | Current name and home |
+|---|---|
+| Incident-only routing | **Strain-triggered interception** (spec behavior 2) |
+| Target-state routing | **Target-state routing** (spec behavior 1) — unchanged |
+| Collective fatigue-aware routing | **Collective strain signals** (spec behavior 3) |
+| Usage-decay pricing | **Reservation-aware routing** (spec behavior 4). Retired as a pricing behavior in [`CONTEXT.md`](../../CONTEXT.md): nothing decays and the gateway never prices idle reserved capacity. It is a routing input |
+| Incident-only pricing | **Dropped.** [ADR 0004](../adr/0004-incidents-included-not-surcharged.md): the gateway declares the incident window and must not be paid by its own declarations. Incidents are included, not surcharged. The verified-negative market finding above stands; the product no longer takes that position |
+
+Do not cite the row names above as live product positions.
+
 Sharpest positioning facts: OpenRouter's uptime-aware load balancing is *disabled* the
 moment a customer sets `sort` or `order` — resilience and cost/latency optimization do
 not compose there. Kong's docs concede per-node health isolation. Cloudflare ships no
